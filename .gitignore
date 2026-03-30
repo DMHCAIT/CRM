@@ -1,0 +1,75 @@
+# Dependencies
+node_modules/
+lead-ai/crm/frontend/node_modules/
+lead-ai/crm/backend/__pycache__/
+lead-ai/crm/backend/venv/
+lead-ai/crm/backend/.venv/
+
+# Python cache
+*.pyc
+__pycache__/
+*.pyo
+*.pyd
+.Python
+*.so
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+*.env
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build outputs
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Database files
+*.db
+*.sqlite3
+
+# Cache
+.cache/
+*.cache
+
+# Test coverage
+coverage/
+.coverage
+htmlcov/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Model files (large)
+*.h5
+*.hdf5
+*.pb
+
+# Data files (optional - uncomment if data is large)
+# *.csv
+# *.parquet
+# *.pickle

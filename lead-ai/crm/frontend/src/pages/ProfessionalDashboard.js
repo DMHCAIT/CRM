@@ -121,7 +121,7 @@ const ProfessionalDashboard = () => {
 
   const { data: recentLeads } = useQuery({
     queryKey: ['recentLeads'],
-    queryFn: () => leadsAPI.getAll({ limit: 5 }).then(res => res.data).catch(() => ({ leads: [] }))
+    queryFn: () => leadsAPI.getAll({ limit: 5 }).then(res => res.data.leads || []).catch(() => [])
   });
 
   if (isLoading) {

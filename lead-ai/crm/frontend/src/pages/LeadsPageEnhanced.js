@@ -13,6 +13,7 @@ import {
   Drawer,
   Form,
   message,
+  Modal,
   Popconfirm,
   Row,
   Col,
@@ -95,6 +96,18 @@ const LeadsPageEnhanced = () => {
   const [showUpdatedPicker, setShowUpdatedPicker] = useState(false);
   const [form] = Form.useForm();
   const [bulkForm] = Form.useForm();
+  
+  // Auto-assignment state
+  const [autoAssignModal, setAutoAssignModal] = useState(false);
+  const [assignStrategy, setAssignStrategy] = useState('intelligent');
+  const [assignPreview, setAssignPreview] = useState(null);
+  const [assignLoading, setAssignLoading] = useState(false);
+  
+  // Bulk actions state
+  const [bulkEmailModal, setBulkEmailModal] = useState(false);
+  const [bulkWhatsAppModal, setBulkWhatsAppModal] = useState(false);
+  const [bulkEmailForm] = Form.useForm();
+  const [bulkWhatsAppForm] = Form.useForm();
 
   // Fetch data
   const { data: leads = [], isLoading, error, refetch } = useQuery({
@@ -132,7 +145,8 @@ const LeadsPageEnhanced = () => {
     queryFn: async () => {
       try {
         const res = await coursesAPI.getAll();
-        return res.data || [];
+        const data = res.data;
+        return Array.isArray(data) ? data : [];
       } catch (err) {
         console.error('Failed to fetch courses:', err);
         return [];
@@ -172,9 +186,12 @@ const LeadsPageEnhanced = () => {
   const uniqueCountries = [...new Set(leads.map(l => l.country))].filter(Boolean).sort();
   const uniqueAssignedUsers = [...new Set(leads.map(l => l.assigned_to))].filter(Boolean).sort();
 
+  // Ensure courses is always an array
+  const safeCourses = Array.isArray(courses) ? courses : [];
+
   // Handle course selection to auto-populate price
   const handleCourseChange = (courseName) => {
-    const selectedCourse = courses.find(c => c.course_name === courseName);
+    const selectedCourse = safeCourses.find(c => c.course_name === courseName);
     if (selectedCourse) {
       form.setFieldsValue({
         expected_revenue: selectedCourse.price,
@@ -208,6 +225,61 @@ const LeadsPageEnhanced = () => {
     },
   });
 
+  // Auto-assign functions
+  const handleAutoAssign = async () => {
+    setAssignLoading(true);
+    try {
+      const response = await fetch(`${process.env.REACT_APP_API_URL}/api/leads/bulk-auto-assign?strategy=${assignStrategy}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify(selectedRows.map(r => r.lead_id))
+      });
+      const data = await response.json();
+      
+      if (data.assigned > 0) {
+        message.success(`Successfully assigned ${data.assigned} leads`);
+        setAutoAssignModal(false);
+        setSelectedRows([]);
+        queryClient.invalidateQueries(['leads']);
+      } else {
+        message.warning('No leads were assigned');
+      }
+    } catch (error) {
+      message.error('Auto-assignment failed: ' + error.message);
+    } finally {
+      setAssignLoading(false);
+    }
+  };
+  
+  const handlePreviewAssignment = async () => {
+    setAssignLoading(true);
+    try {
+      const response = await fetch(`${process.env.REACT_APP_API_URL}/api/assignment/preview?strategy=${assignStrategy}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify(selectedRows.map(r => r.lead_id))
+      });
+      const data = await response.json();
+      setAssignPreview(data);
+    } catch (error) {
+      message.error('Failed to generate preview');
+    } finally {
+      setAssignLoading(false);
+    }
+  };
+  
+  useEffect(() => {
+    if (autoAssignModal && selectedRows.length > 0) {
+      handlePreviewAssignment();
+    }
+  }, [autoAssignModal, assignStrategy]);
+
   const bulkUpdateMutation = useMutation({
     mutationFn: ({ leadIds, updates }) => leadsAPI.bulkUpdate(leadIds, updates),
     onSuccess: () => {
@@ -221,6 +293,84 @@ const LeadsPageEnhanced = () => {
       message.error(`Failed to update leads: ${error.message}`);
     },
   });
+  
+  // Bulk action handlers
+  const handleBulkDelete = () => {
+    Modal.confirm({
+      title: 'Delete Selected Leads?',
+      content: `Are you sure you want to delete ${selectedRows.length} leads? This action cannot be undone.`,
+      okText: 'Delete',
+      okType: 'danger',
+      onOk: async () => {
+        try {
+          const promises = selectedRows.map(row => 
+            fetch(`${process.env.REACT_APP_API_URL}/api/leads/${row.lead_id}`, {
+              method: 'DELETE',
+              headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+            })
+          );
+          
+          await Promise.all(promises);
+          message.success(`${selectedRows.length} leads deleted successfully`);
+          setSelectedRows([]);
+          queryClient.invalidateQueries(['leads']);
+        } catch (error) {
+          message.error('Failed to delete some leads');
+        }
+      }
+    });
+  };
+  
+  const handleBulkEmail = async (values) => {
+    try {
+      const promises = selectedRows.map(row => 
+        fetch(`${process.env.REACT_APP_API_URL}/api/leads/${row.lead_id}/send-email`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          },
+          body: JSON.stringify({
+            subject: values.subject,
+            body: values.body
+          })
+        })
+      );
+      
+      await Promise.all(promises);
+      message.success(`Email sent to ${selectedRows.length} leads`);
+      setBulkEmailModal(false);
+      bulkEmailForm.resetFields();
+      setSelectedRows([]);
+    } catch (error) {
+      message.error('Failed to send some emails');
+    }
+  };
+  
+  const handleBulkWhatsApp = async (values) => {
+    try {
+      const promises = selectedRows.map(row => 
+        fetch(`${process.env.REACT_APP_API_URL}/api/leads/${row.lead_id}/send-whatsapp`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+          },
+          body: JSON.stringify({
+            message: values.message
+          })
+        })
+      );
+      
+      await Promise.all(promises);
+      message.success(`WhatsApp sent to ${selectedRows.length} leads`);
+      setBulkWhatsAppModal(false);
+      bulkWhatsAppForm.resetFields();
+      setSelectedRows([]);
+    } catch (error) {
+      message.error('Failed to send some messages');
+    }
+  };
 
   // Calculate stats
   const stats = {
@@ -1012,7 +1162,37 @@ const LeadsPageEnhanced = () => {
                 <Button size="small" onClick={() => setSelectedRows([])}>Clear Selection</Button>
                 <Divider type="vertical" />
                 <Button size="small" onClick={() => setBulkDrawerVisible(true)}>Bulk Update</Button>
-                <Button size="small" danger>Bulk Delete</Button>
+                <Button 
+                  size="small" 
+                  icon={<ThunderboltOutlined />}
+                  onClick={() => setAutoAssignModal(true)}
+                  type="primary"
+                  ghost
+                >
+                  Auto-Assign
+                </Button>
+                <Button 
+                  size="small" 
+                  icon={<MailOutlined />}
+                  onClick={() => setBulkEmailModal(true)}
+                >
+                  Bulk Email
+                </Button>
+                <Button 
+                  size="small" 
+                  icon={<WhatsAppOutlined />}
+                  onClick={() => setBulkWhatsAppModal(true)}
+                >
+                  Bulk WhatsApp
+                </Button>
+                <Button 
+                  size="small" 
+                  danger
+                  icon={<DeleteOutlined />}
+                  onClick={handleBulkDelete}
+                >
+                  Delete
+                </Button>
               </Space>
             }
             type="info"
@@ -1142,7 +1322,7 @@ const LeadsPageEnhanced = () => {
                 option.children.toLowerCase().includes(input.toLowerCase())
               }
             >
-              {courses.map(course => (
+              {safeCourses.map(course => (
                 <Option key={course.id} value={course.course_name}>
                   {course.course_name} - ₹{(course.price / 1000).toFixed(0)}K
                 </Option>
@@ -1357,6 +1537,229 @@ const LeadsPageEnhanced = () => {
           </Button>
         </Space>
       </Drawer>
+      
+      {/* Auto-Assignment Modal */}
+      <Drawer
+        title={<Space><ThunderboltOutlined style={{ color: '#1890ff' }} />Auto-Assign {selectedRows.length} Leads</Space>}
+        width={600}
+        open={autoAssignModal}
+        onClose={() => setAutoAssignModal(false)}
+        footer={
+          <Space>
+            <Button onClick={() => setAutoAssignModal(false)}>Cancel</Button>
+            <Button 
+              type="primary" 
+              icon={<ThunderboltOutlined />}
+              onClick={handleAutoAssign}
+              loading={assignLoading}
+            >
+              Confirm Assignment
+            </Button>
+          </Space>
+        }
+      >
+        <Space direction="vertical" style={{ width: '100%' }} size="large">
+          {/* Strategy Selection */}
+          <Card size="small" title="Assignment Strategy">
+            <Radio.Group 
+              value={assignStrategy} 
+              onChange={(e) => setAssignStrategy(e.target.value)}
+              style={{ width: '100%' }}
+            >
+              <Space direction="vertical" style={{ width: '100%' }}>
+                <Radio value="intelligent">
+                  <Space direction="vertical" size={0}>
+                    <Text strong>🤖 Intelligent (AI-Driven) - Recommended</Text>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      Balances workload, specialization, performance, and lead score
+                    </Text>
+                  </Space>
+                </Radio>
+                <Radio value="round-robin">
+                  <Space direction="vertical" size={0}>
+                    <Text strong>🔄 Round-Robin (Equal Distribution)</Text>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      Distributes leads equally among all counselors
+                    </Text>
+                  </Space>
+                </Radio>
+                <Radio value="skill-based">
+                  <Space direction="vertical" size={0}>
+                    <Text strong>🎯 Skill-Based (Specialization)</Text>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      Matches leads to counselors by country/course expertise
+                    </Text>
+                  </Space>
+                </Radio>
+              </Space>
+            </Radio.Group>
+          </Card>
+          
+          {/* Assignment Preview */}
+          {assignPreview && (
+            <Card 
+              size="small" 
+              title={
+                <Space>
+                  <EyeOutlined />
+                  Assignment Preview
+                </Space>
+              }
+              loading={assignLoading}
+            >
+              {/* Distribution Chart */}
+              {assignPreview.distribution && (
+                <div style={{ marginBottom: 16 }}>
+                  <Text strong style={{ display: 'block', marginBottom: 8 }}>
+                    Distribution Across Counselors:
+                  </Text>
+                  {Object.entries(assignPreview.distribution).map(([counselor, count]) => (
+                    <div key={counselor} style={{ marginBottom: 8 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                        <Text>{counselor}</Text>
+                        <Text strong>{count} leads</Text>
+                      </div>
+                      <Progress 
+                        percent={(count / assignPreview.total_leads) * 100} 
+                        showInfo={false}
+                        strokeColor="#1890ff"
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+              
+              {/* Preview Details */}
+              <Alert
+                message="Preview Details"
+                description={
+                  <Space direction="vertical" size={2}>
+                    <Text>Total Leads: <strong>{assignPreview.total_leads}</strong></Text>
+                    <Text>Strategy: <strong>{assignPreview.strategy}</strong></Text>
+                    <Text>Counselors: <strong>{Object.keys(assignPreview.distribution || {}).length}</strong></Text>
+                  </Space>
+                }
+                type="info"
+                showIcon
+              />
+              
+              {/* Sample Assignments */}
+              {assignPreview.preview && assignPreview.preview.length > 0 && (
+                <div style={{ marginTop: 16 }}>
+                  <Text strong style={{ display: 'block', marginBottom: 8 }}>
+                    Sample Assignments (first 5):
+                  </Text>
+                  {assignPreview.preview.slice(0, 5).map((item, idx) => (
+                    <Card size="small" key={idx} style={{ marginBottom: 8 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <Space direction="vertical" size={0}>
+                          <Text strong>{item.lead_name}</Text>
+                          <Text type="secondary" style={{ fontSize: 12 }}>
+                            {item.lead_country}
+                          </Text>
+                        </Space>
+                        <Space direction="vertical" size={0} align="end">
+                          <Tag color="blue">{item.counselor_name}</Tag>
+                          {item.score > 0 && (
+                            <Text type="secondary" style={{ fontSize: 11 }}>
+                              Score: {item.score.toFixed(1)}
+                            </Text>
+                          )}
+                        </Space>
+                      </div>
+                      {item.reasoning && (
+                        <Text type="secondary" style={{ fontSize: 11, display: 'block', marginTop: 4 }}>
+                          {item.reasoning}
+                        </Text>
+                      )}
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </Card>
+          )}
+        </Space>
+      </Drawer>
+      
+      {/* Bulk Email Modal */}
+      <Modal
+        title={`Send Email to ${selectedRows.length} Leads`}
+        open={bulkEmailModal}
+        onOk={() => bulkEmailForm.submit()}
+        onCancel={() => {
+          setBulkEmailModal(false);
+          bulkEmailForm.resetFields();
+        }}
+        width={600}
+      >
+        <Form
+          form={bulkEmailForm}
+          layout="vertical"
+          onFinish={handleBulkEmail}
+        >
+          <Form.Item
+            name="subject"
+            label="Email Subject"
+            rules={[{ required: true, message: 'Please enter email subject' }]}
+          >
+            <Input placeholder="e.g., Special Scholarship Opportunity" />
+          </Form.Item>
+          
+          <Form.Item
+            name="body"
+            label="Email Body"
+            rules={[{ required: true, message: 'Please enter email body' }]}
+          >
+            <Input.TextArea 
+              rows={6} 
+              placeholder="Enter email content..."
+            />
+          </Form.Item>
+          
+          <Alert
+            message={`This email will be sent to ${selectedRows.length} selected leads`}
+            type="info"
+            showIcon
+          />
+        </Form>
+      </Modal>
+      
+      {/* Bulk WhatsApp Modal */}
+      <Modal
+        title={`Send WhatsApp to ${selectedRows.length} Leads`}
+        open={bulkWhatsAppModal}
+        onOk={() => bulkWhatsAppForm.submit()}
+        onCancel={() => {
+          setBulkWhatsAppModal(false);
+          bulkWhatsAppForm.resetFields();
+        }}
+        width={600}
+      >
+        <Form
+          form={bulkWhatsAppForm}
+          layout="vertical"
+          onFinish={handleBulkWhatsApp}
+        >
+          <Form.Item
+            name="message"
+            label="WhatsApp Message"
+            rules={[{ required: true, message: 'Please enter message' }]}
+          >
+            <Input.TextArea 
+              rows={6} 
+              placeholder="Enter WhatsApp message..."
+              maxLength={1000}
+              showCount
+            />
+          </Form.Item>
+          
+          <Alert
+            message={`This message will be sent to ${selectedRows.length} selected leads`}
+            type="info"
+            showIcon
+          />
+        </Form>
+      </Modal>
     </div>
   );
 };

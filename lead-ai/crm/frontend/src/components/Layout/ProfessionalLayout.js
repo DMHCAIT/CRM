@@ -14,6 +14,7 @@ import {
   Activity,
   Search,
   Shield,
+  Sheet,
 } from 'lucide-react';
 import SmartNotifications from '../../features/notifications/SmartNotifications';
 import { isFeatureEnabled } from '../../config/featureFlags';
@@ -34,6 +35,7 @@ const ProfessionalLayout = ({ children }) => {
     { key: '/users', icon: UserPlus, label: 'Team' },
     { key: '/user-activity', icon: Activity, label: 'User Activity' },
     { key: '/analytics', icon: BarChart3, label: 'Analytics' },
+    { key: '/sheet-sync', icon: Sheet, label: 'Sheet Sync' },
     { key: '/audit-logs', icon: Shield, label: 'Audit Logs' },
   ];
 

@@ -15,6 +15,12 @@ import DragDropPipeline from './features/pipeline/DragDropPipeline';
 import UserActivityPage from './pages/UserActivityPage';
 import LeadAnalysisPage from './pages/LeadAnalysisPage';
 import AuditLogs from './features/audit/AuditLogs';
+import GoogleSheetSync from './pages/GoogleSheetSync';
+import AdvancedAnalytics from './pages/AdvancedAnalytics';
+import CustomReportBuilder from './pages/CustomReportBuilder';
+import AdvancedSegmentation from './pages/AdvancedSegmentation';
+import PerformanceMonitoring from './pages/PerformanceMonitoring';
+// import AutomationSettings from './pages/AutomationSettings'; // Phase 1 - Not yet created
 import { isFeatureEnabled } from './config/featureFlags';
 import ErrorBoundary from './components/ErrorBoundary';
 
@@ -73,6 +79,13 @@ function App() {
               {/* Analytics */}
               <Route path="/lead-analysis" element={<LeadAnalysisPage />} />
               <Route path="/analytics" element={<AnalyticsPage />} />
+              <Route path="/advanced-analytics" element={<AdvancedAnalytics />} />
+              <Route path="/reports" element={<CustomReportBuilder />} />
+              <Route path="/segmentation" element={<AdvancedSegmentation />} />
+              <Route path="/performance" element={<PerformanceMonitoring />} />
+              
+              {/* Automation - Phase 1 feature, not yet implemented */}
+              {/* <Route path="/automation" element={<AutomationSettings />} /> */}
               
               {/* Resources */}
               <Route path="/hospitals" element={<HospitalsPage />} />
@@ -82,6 +95,9 @@ function App() {
               <Route path="/users" element={<UsersPage />} />
               <Route path="/user-activity" element={<UserActivityPage />} />
               
+              {/* Integrations */}
+              <Route path="/sheet-sync" element={<GoogleSheetSync />} />
+
               {/* Audit Logs */}
               {isFeatureEnabled('AUDIT_LOGS') && (
                 <Route path="/audit-logs" element={<AuditLogs />} />

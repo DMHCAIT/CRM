@@ -17,14 +17,27 @@ export const leadsAPI = {
   update: (leadId, data) => api.put(`/api/leads/${leadId}`, data),
   delete: (leadId) => api.delete(`/api/leads/${leadId}`),
   bulkUpdate: (leadIds, updates) => api.post('/api/leads/bulk-update', { lead_ids: leadIds, updates }),
-  
+
   // Notes
   getNotes: (leadId) => api.get(`/api/leads/${leadId}/notes`),
   addNote: (leadId, data) => api.post(`/api/leads/${leadId}/notes`, data),
-  
+
+  // Full lead timeline
+  getTimeline: (leadId) => api.get(`/api/leads/${leadId}/timeline`),
+
   // Communication
   sendWhatsApp: (leadId, message) => api.post(`/api/leads/${leadId}/send-whatsapp`, { message }),
   sendEmail: (leadId, subject, body) => api.post(`/api/leads/${leadId}/send-email`, { subject, body }),
+};
+
+// Monitoring API
+export const monitoringAPI = {
+  getDailyActivity: (date, counselor) =>
+    api.get('/api/monitoring/daily-activity', { params: { date, counselor } }),
+  getActivityLog: (params) =>
+    api.get('/api/monitoring/activity-log', { params }),
+  getCounselorSummary: (from_date, to_date) =>
+    api.get('/api/monitoring/counselor-summary', { params: { from_date, to_date } }),
 };
 
 // Dashboard API
@@ -62,6 +75,14 @@ export const usersAPI = {
   create: (data) => api.post('/api/users', data),
   update: (userId, data) => api.put(`/api/users/${userId}`, data),
   delete: (userId) => api.delete(`/api/users/${userId}`),
+};
+
+// Google Sheet Sync API
+export const sheetSyncAPI = {
+  getStatus: (apiKey) =>
+    api.get('/api/webhook/sheet-sync/status', { params: { api_key: apiKey } }),
+  sync: (apiKey, headers, rows, sheetName) =>
+    api.post(`/api/webhook/sheet-sync?api_key=${apiKey}`, { headers, rows, sheet_name: sheetName }),
 };
 
 export default api;

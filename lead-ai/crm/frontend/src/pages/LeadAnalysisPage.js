@@ -102,8 +102,8 @@ const LeadAnalysisPage = () => {
   });
 
   const leads = leadsData?.leads || [];
-  const users = usersData?.users || [];
-  const courses = coursesData || [];
+  const users = Array.isArray(usersData) ? usersData : (usersData?.users || []);
+  const courses = Array.isArray(coursesData) ? coursesData : [];
 
   // Calculate lead age in days
   const calculateLeadAge = (createdAt) => {

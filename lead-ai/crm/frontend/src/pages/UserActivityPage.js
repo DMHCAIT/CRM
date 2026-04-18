@@ -1,571 +1,453 @@
-import React, { useState, useMemo } from 'react';
-import { 
-  Card, 
-  Row, 
-  Col, 
-  Statistic, 
-  Table, 
-  Tag, 
-  Avatar, 
-  Typography, 
-  Select, 
-  DatePicker, 
-  Button, 
-  Space,
-  Progress,
-  Tooltip,
-  Divider,
-  Badge,
-  Tabs
+import React, { useState } from 'react';
+import {
+  Card, Row, Col, Table, Tag, Avatar, Typography,
+  Select, DatePicker, Button, Space, Tabs, Badge,
+  Statistic, Timeline, Input, Empty, Spin,
 } from 'antd';
 import { useQuery } from '@tanstack/react-query';
-import { leadsAPI, usersAPI } from '../api/api';
+import { monitoringAPI, usersAPI, leadsAPI } from '../api/api';
 import {
-  UserOutlined,
-  RiseOutlined,
-  FallOutlined,
-  DollarOutlined,
-  PhoneOutlined,
-  CheckCircleOutlined,
-  ClockCircleOutlined,
-  FireOutlined,
-  TrophyOutlined,
-  TeamOutlined,
-  LineChartOutlined,
-  ReloadOutlined,
-  FilterOutlined
+  UserOutlined, PhoneOutlined, WhatsAppOutlined, MailOutlined,
+  CommentOutlined, SwapOutlined, TeamOutlined, TrophyOutlined,
+  CalendarOutlined, ReloadOutlined, FilterOutlined, SearchOutlined,
+  FireOutlined, CheckCircleOutlined, EditOutlined, RiseOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import {
-  BarChart,
-  Bar,
-  LineChart,
-  Line,
-  PieChart,
-  Pie,
-  Cell,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip as RechartsTooltip,
-  Legend,
-  ResponsiveContainer
+  BarChart, Bar, XAxis, YAxis, CartesianGrid,
+  Tooltip as RechartsTooltip, Legend, ResponsiveContainer, LineChart, Line, Cell,
 } from 'recharts';
 
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
+const { Option } = Select;
+
+// ── helpers ────────────────────────────────────────────────────────────────
+
+const ACTIVITY_META = {
+  call:          { color: '#1890ff', icon: <PhoneOutlined />,     label: 'Call' },
+  whatsapp:      { color: '#25D366', icon: <WhatsAppOutlined />,  label: 'WhatsApp' },
+  email:         { color: '#fa8c16', icon: <MailOutlined />,      label: 'Email' },
+  note:          { color: '#722ed1', icon: <CommentOutlined />,   label: 'Note' },
+  status_change: { color: '#eb2f96', icon: <SwapOutlined />,      label: 'Status Change' },
+  assignment:    { color: '#13c2c2', icon: <UserOutlined />,      label: 'Assignment' },
+  follow_up_set: { color: '#faad14', icon: <CalendarOutlined />,  label: 'Follow-up Set' },
+  field_update:  { color: '#8c8c8c', icon: <EditOutlined />,      label: 'Field Update' },
+  lead_created:  { color: '#52c41a', icon: <RiseOutlined />,      label: 'Lead Created' },
+};
+
+const getMeta = type => ACTIVITY_META[type] || { color: '#8c8c8c', icon: <EditOutlined />, label: type };
+
+// ── component ───────────────────────────────────────────────────────────────
 
 const UserActivityPage = () => {
-  const [selectedUser, setSelectedUser] = useState('all');
-  const [dateRange, setDateRange] = useState([dayjs().subtract(30, 'days'), dayjs()]);
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTab] = useState('daily');
+  const [selectedDate, setSelectedDate] = useState(dayjs());
+  const [selectedCounselor, setSelectedCounselor] = useState(null);
+  const [summaryRange, setSummaryRange] = useState([dayjs().subtract(30, 'days'), dayjs()]);
+  const [logFilters, setLogFilters] = useState({ activity_type: null, counselor: null, lead_id_filter: '' });
 
-  const { data: leadsData, isLoading: leadsLoading } = useQuery({
-    queryKey: ['leads'],
-    queryFn: leadsAPI.getAll
-  });
-  const { data: usersData, isLoading: usersLoading } = useQuery({
+  // ── queries ──────────────────────────────────────────────────────────────
+
+  const { data: usersData } = useQuery({
     queryKey: ['users'],
-    queryFn: usersAPI.getAll
+    queryFn: () => usersAPI.getAll().then(r => r.data),
   });
 
-  // Filter leads by date range
-  const filterLeadsByDate = (leads) => {
-    if (!leads || !dateRange || !dateRange[0] || !dateRange[1]) return [];
-    return leads.filter(lead => {
-      const leadDate = dayjs(lead.updated_at || lead.created_at);
-      return leadDate.isAfter(dateRange[0]) && leadDate.isBefore(dateRange[1].add(1, 'day'));
-    });
-  };
+  const { data: dailyData, isLoading: dailyLoading, refetch: refetchDaily } = useQuery({
+    queryKey: ['monitoring-daily', selectedDate?.format('YYYY-MM-DD'), selectedCounselor],
+    queryFn: () => monitoringAPI.getDailyActivity(
+      selectedDate?.format('YYYY-MM-DD'),
+      selectedCounselor || undefined
+    ).then(r => r.data),
+    enabled: !!selectedDate,
+  });
 
-  const filteredLeads = useMemo(() => 
-    filterLeadsByDate(leadsData?.leads || []), 
-    [leadsData, dateRange]
-  );
+  const { data: summaryData, isLoading: summaryLoading, refetch: refetchSummary } = useQuery({
+    queryKey: ['monitoring-summary', summaryRange?.[0]?.toISOString(), summaryRange?.[1]?.toISOString()],
+    queryFn: () => monitoringAPI.getCounselorSummary(
+      summaryRange?.[0]?.toISOString(),
+      summaryRange?.[1]?.toISOString()
+    ).then(r => r.data),
+    enabled: !!summaryRange,
+  });
 
-  // Calculate user metrics
-  const calculateUserMetrics = (userId) => {
-    const userLeads = userId === 'all' 
-      ? filteredLeads 
-      : filteredLeads.filter(l => l.assigned_to === userId);
+  const { data: logData, isLoading: logLoading, refetch: refetchLog } = useQuery({
+    queryKey: ['monitoring-log', logFilters],
+    queryFn: () => monitoringAPI.getActivityLog({
+      ...logFilters,
+      lead_id_filter: logFilters.lead_id_filter || undefined,
+    }).then(r => r.data),
+  });
 
-    const totalLeads = userLeads.length;
-    const updatedLeads = userLeads.filter(l => {
-      if (!dateRange || !dateRange[0] || !dateRange[1]) return false;
-      const updated = dayjs(l.updated_at);
-      return updated.isAfter(dateRange[0]) && updated.isBefore(dateRange[1].add(1, 'day'));
-    }).length;
+  // ── helpers ───────────────────────────────────────────────────────────────
 
-    const potentialLeads = userLeads.filter(l => 
-      ['Hot', 'Warm'].includes(l.status)
-    ).length;
+  const users = Array.isArray(usersData) ? usersData : (usersData?.users || []);
+  const counselors = dailyData?.counselors || [];
+  const allCounselors = summaryData?.counselors || [];
 
-    const enrolled = userLeads.filter(l => l.status === 'Enrolled').length;
-    const hot = userLeads.filter(l => l.status === 'Hot').length;
-    const warm = userLeads.filter(l => l.status === 'Warm').length;
-    const followUp = userLeads.filter(l => l.status === 'Follow Up').length;
-    const lost = userLeads.filter(l => 
-      ['Not Interested', 'Not Answering', 'Junk'].includes(l.status)
-    ).length;
+  // Build bar chart data for daily breakdown
+  const dailyBarData = counselors.map(c => ({
+    name: c.counselor.split(' ')[0],   // first name only for brevity
+    Calls: c.calls,
+    WhatsApp: c.whatsapp_sent,
+    Email: c.emails_sent,
+    Notes: c.notes_added,
+    'Status Changes': c.status_changes,
+  }));
 
-    const totalRevenue = userLeads
-      .filter(l => l.status === 'Enrolled')
-      .reduce((sum, l) => sum + (l.actual_revenue || 0), 0);
+  // ── columns ───────────────────────────────────────────────────────────────
 
-    const expectedRevenue = userLeads
-      .filter(l => ['Hot', 'Warm'].includes(l.status))
-      .reduce((sum, l) => sum + (l.expected_revenue || 0), 0);
-
-    const conversionRate = totalLeads > 0 ? ((enrolled / totalLeads) * 100).toFixed(1) : 0;
-
-    const avgScore = userLeads.length > 0
-      ? (userLeads.reduce((sum, l) => sum + (l.ai_score || 0), 0) / userLeads.length).toFixed(1)
-      : 0;
-
-    return {
-      totalLeads,
-      updatedLeads,
-      potentialLeads,
-      enrolled,
-      hot,
-      warm,
-      followUp,
-      lost,
-      totalRevenue,
-      expectedRevenue,
-      conversionRate,
-      avgScore,
-      userLeads
-    };
-  };
-
-  const metrics = calculateUserMetrics(selectedUser);
-
-  // Get all users with metrics
-  const usersWithMetrics = useMemo(() => {
-    if (!usersData?.users) return [];
-    
-    return usersData.users.map(user => {
-      const userMetrics = calculateUserMetrics(user.full_name);
-      return {
-        ...user,
-        ...userMetrics
-      };
-    }).sort((a, b) => b.totalRevenue - a.totalRevenue);
-  }, [usersData, filteredLeads, dateRange]);
-
-  // Status distribution data for pie chart
-  const statusDistribution = [
-    { name: 'Enrolled', value: metrics.enrolled, color: '#52c41a' },
-    { name: 'Hot', value: metrics.hot, color: '#ff4d4f' },
-    { name: 'Warm', value: metrics.warm, color: '#faad14' },
-    { name: 'Follow Up', value: metrics.followUp, color: '#1890ff' },
-    { name: 'Lost', value: metrics.lost, color: '#8c8c8c' },
-  ];
-
-  // Daily activity data
-  const getDailyActivity = () => {
-    if (!dateRange || !dateRange[0] || !dateRange[1]) return [];
-    
-    const days = [];
-    const start = dateRange[0];
-    const end = dateRange[1];
-    
-    for (let d = start; d.isBefore(end) || d.isSame(end); d = d.add(1, 'day')) {
-      const dayLeads = metrics.userLeads.filter(l => {
-        const updated = dayjs(l.updated_at);
-        return updated.isSame(d, 'day');
-      });
-
-      days.push({
-        date: d.format('DD MMM'),
-        updated: dayLeads.length,
-        enrolled: dayLeads.filter(l => l.status === 'Enrolled').length,
-        potential: dayLeads.filter(l => ['Hot', 'Warm'].includes(l.status)).length
-      });
-    }
-    
-    return days;
-  };
-
-  const dailyActivityData = getDailyActivity();
-
-  // User leaderboard columns
-  const leaderboardColumns = [
+  const dailyColumns = [
     {
-      title: 'Rank',
-      key: 'rank',
-      width: 60,
-      render: (_, __, index) => (
-        <Avatar 
-          size="small" 
-          style={{ 
-            backgroundColor: index === 0 ? '#faad14' : index === 1 ? '#d9d9d9' : index === 2 ? '#d48806' : '#1890ff' 
-          }}
-        >
-          {index + 1}
-        </Avatar>
-      )
-    },
-    {
-      title: 'User',
-      dataIndex: 'full_name',
-      key: 'full_name',
-      render: (name, record) => (
+      title: 'Counselor',
+      dataIndex: 'counselor',
+      key: 'counselor',
+      render: name => (
         <Space>
-          <Avatar style={{ backgroundColor: '#1890ff' }}>
-            {name[0]}
-          </Avatar>
-          <div>
-            <div><Text strong>{name}</Text></div>
-            <Text type="secondary" style={{ fontSize: '12px' }}>{record.role}</Text>
-          </div>
+          <Avatar style={{ backgroundColor: '#1890ff' }}>{(name || '?')[0].toUpperCase()}</Avatar>
+          <Text strong>{name}</Text>
         </Space>
-      )
+      ),
     },
-    {
-      title: 'Total Leads',
-      dataIndex: 'totalLeads',
-      key: 'totalLeads',
-      sorter: (a, b) => a.totalLeads - b.totalLeads,
-      render: (val) => <Badge count={val} showZero style={{ backgroundColor: '#1890ff' }} />
-    },
-    {
-      title: 'Updated',
-      dataIndex: 'updatedLeads',
-      key: 'updatedLeads',
-      sorter: (a, b) => a.updatedLeads - b.updatedLeads,
-      render: (val) => <Tag color="blue">{val}</Tag>
-    },
-    {
-      title: 'Potential',
-      dataIndex: 'potentialLeads',
-      key: 'potentialLeads',
-      sorter: (a, b) => a.potentialLeads - b.potentialLeads,
-      render: (val) => <Tag color="orange">{val}</Tag>
-    },
-    {
-      title: 'Enrolled',
-      dataIndex: 'enrolled',
-      key: 'enrolled',
-      sorter: (a, b) => a.enrolled - b.enrolled,
-      render: (val) => <Tag color="green">{val}</Tag>
-    },
-    {
-      title: 'Revenue',
-      dataIndex: 'totalRevenue',
-      key: 'totalRevenue',
-      sorter: (a, b) => a.totalRevenue - b.totalRevenue,
-      render: (val) => <Text strong style={{ color: '#52c41a' }}>₹{val.toLocaleString()}</Text>
-    },
-    {
-      title: 'Conversion',
-      dataIndex: 'conversionRate',
-      key: 'conversionRate',
-      sorter: (a, b) => a.conversionRate - b.conversionRate,
-      render: (val) => (
-        <Progress 
-          percent={parseFloat(val)} 
-          size="small" 
-          status={val > 20 ? 'success' : val > 10 ? 'normal' : 'exception'}
-        />
-      )
-    },
-    {
-      title: 'Avg Score',
-      dataIndex: 'avgScore',
-      key: 'avgScore',
-      sorter: (a, b) => a.avgScore - b.avgScore,
-      render: (val) => (
-        <Tag color={val > 70 ? 'green' : val > 40 ? 'orange' : 'default'}>
-          {val}
-        </Tag>
-      )
-    }
+    { title: 'Calls', dataIndex: 'calls', key: 'calls',
+      render: v => <Tag color="blue" icon={<PhoneOutlined />}>{v}</Tag> },
+    { title: 'WhatsApp', dataIndex: 'whatsapp_sent', key: 'whatsapp_sent',
+      render: v => <Tag color="green" icon={<WhatsAppOutlined />}>{v}</Tag> },
+    { title: 'Emails', dataIndex: 'emails_sent', key: 'emails_sent',
+      render: v => <Tag color="orange" icon={<MailOutlined />}>{v}</Tag> },
+    { title: 'Notes', dataIndex: 'notes_added', key: 'notes_added',
+      render: v => <Tag color="purple" icon={<CommentOutlined />}>{v}</Tag> },
+    { title: 'Status Changes', dataIndex: 'status_changes', key: 'status_changes',
+      render: v => <Tag color="magenta" icon={<SwapOutlined />}>{v}</Tag> },
+    { title: 'Leads Touched', dataIndex: 'leads_touched', key: 'leads_touched',
+      render: v => <Badge count={v} showZero style={{ backgroundColor: '#52c41a' }} /> },
+    { title: 'Total Actions', dataIndex: 'total_actions', key: 'total_actions',
+      sorter: (a, b) => a.total_actions - b.total_actions,
+      defaultSortOrder: 'descend',
+      render: v => <Text strong style={{ fontSize: 16, color: '#1890ff' }}>{v}</Text> },
   ];
+
+  const summaryColumns = [
+    {
+      title: '#',
+      key: 'rank',
+      width: 50,
+      render: (_, __, i) => (
+        <Avatar size="small"
+          style={{ backgroundColor: i === 0 ? '#faad14' : i === 1 ? '#bfbfbf' : i === 2 ? '#d48806' : '#1890ff' }}>
+          {i + 1}
+        </Avatar>
+      ),
+    },
+    {
+      title: 'Counselor',
+      dataIndex: 'counselor',
+      render: name => (
+        <Space>
+          <Avatar style={{ backgroundColor: '#1890ff' }}>{(name || '?')[0].toUpperCase()}</Avatar>
+          <Text strong>{name}</Text>
+        </Space>
+      ),
+    },
+    { title: 'Calls',   dataIndex: 'calls',    render: v => <Tag color="blue">{v}</Tag> },
+    { title: 'WhatsApp',dataIndex: 'whatsapp', render: v => <Tag color="green">{v}</Tag> },
+    { title: 'Emails',  dataIndex: 'emails',   render: v => <Tag color="orange">{v}</Tag> },
+    { title: 'Notes',   dataIndex: 'notes',    render: v => <Tag color="purple">{v}</Tag> },
+    { title: 'Status Updates', dataIndex: 'status_changes', render: v => <Tag color="magenta">{v}</Tag> },
+    { title: 'Leads Touched', dataIndex: 'leads_touched',
+      render: v => <Badge count={v} showZero style={{ backgroundColor: '#1890ff' }} /> },
+    { title: 'Enrolled', dataIndex: 'enrolled',
+      render: v => <Tag color="green" icon={<CheckCircleOutlined />}>{v}</Tag> },
+    { title: 'Total', dataIndex: 'total_actions', sorter: (a, b) => a.total_actions - b.total_actions,
+      defaultSortOrder: 'descend',
+      render: v => <Text strong style={{ color: '#1890ff', fontSize: 16 }}>{v}</Text> },
+  ];
+
+  const logColumns = [
+    {
+      title: 'Time',
+      dataIndex: 'created_at',
+      key: 'time',
+      width: 160,
+      render: t => dayjs(t).format('DD MMM HH:mm'),
+    },
+    {
+      title: 'Type',
+      dataIndex: 'type',
+      key: 'type',
+      width: 140,
+      render: type => {
+        const m = getMeta(type);
+        return <Tag color={m.color} icon={m.icon}>{m.label}</Tag>;
+      },
+    },
+    {
+      title: 'Counselor',
+      dataIndex: 'created_by',
+      key: 'created_by',
+      width: 150,
+      render: name => (
+        <Space size={4}>
+          <Avatar size="small" style={{ backgroundColor: '#1890ff' }}>{(name || '?')[0]}</Avatar>
+          <Text>{name}</Text>
+        </Space>
+      ),
+    },
+    {
+      title: 'Lead',
+      dataIndex: 'lead_id',
+      key: 'lead_id',
+      width: 120,
+      render: (id, r) => (
+        <div>
+          <div style={{ fontWeight: 600, fontSize: 12 }}>{id}</div>
+          <div style={{ fontSize: 11, color: '#8c8c8c' }}>{r.lead_name}</div>
+        </div>
+      ),
+    },
+    {
+      title: 'Description',
+      dataIndex: 'description',
+      key: 'description',
+      ellipsis: true,
+    },
+  ];
+
+  // ── render ────────────────────────────────────────────────────────────────
 
   return (
-    <div style={{ padding: '24px', backgroundColor: '#f0f2f5', minHeight: '100vh' }}>
-      {/* Header */}
-      <div style={{ marginBottom: 24 }}>
-        <Title level={2} style={{ marginBottom: 8 }}>
-          <TeamOutlined /> User Activity Dashboard
-        </Title>
-        <Text type="secondary">
-          Comprehensive metrics and performance analytics for all users
-        </Text>
+    <div>
+      <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <Title level={3} style={{ margin: 0 }}>Team Monitoring</Title>
+          <Text type="secondary">Track every action — calls, WhatsApp, emails, status changes</Text>
+        </div>
       </div>
 
-      {/* Filters */}
-      <Card style={{ marginBottom: 24 }}>
-        <Space size="middle" wrap>
-          <div>
-            <Text strong style={{ marginRight: 8 }}><FilterOutlined /> Date Range:</Text>
-            <RangePicker
-              value={dateRange}
-              onChange={setDateRange}
-              format="DD MMM YYYY"
-              style={{ width: 280 }}
-              ranges={{
-                'Today': [dayjs(), dayjs()],
-                'Yesterday': [dayjs().subtract(1, 'day'), dayjs().subtract(1, 'day')],
-                'Last 7 Days': [dayjs().subtract(7, 'days'), dayjs()],
-                'Last 30 Days': [dayjs().subtract(30, 'days'), dayjs()],
-                'This Month': [dayjs().startOf('month'), dayjs()],
-                'Last Month': [dayjs().subtract(1, 'month').startOf('month'), dayjs().subtract(1, 'month').endOf('month')],
-              }}
-            />
-          </div>
-          
-          <div>
-            <Text strong style={{ marginRight: 8 }}><UserOutlined /> User:</Text>
-            <Select
-              value={selectedUser}
-              onChange={setSelectedUser}
-              style={{ width: 200 }}
-              placeholder="Select user"
-            >
-              <Select.Option value="all">
-                <TeamOutlined /> All Users
-              </Select.Option>
-              {usersData?.users?.map(user => (
-                <Select.Option key={user.id} value={user.full_name}>
-                  <Avatar size="small" style={{ marginRight: 8 }}>
-                    {user.full_name[0]}
-                  </Avatar>
-                  {user.full_name}
-                </Select.Option>
-              ))}
-            </Select>
-          </div>
-
-          <Button 
-            icon={<ReloadOutlined />} 
-            type="primary"
-            onClick={() => window.location.reload()}
-          >
-            Refresh
-          </Button>
-        </Space>
-      </Card>
-
-      {/* Overview Metrics */}
-      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-        <Col xs={24} sm={12} lg={6}>
-          <Card>
-            <Statistic
-              title="Total Leads"
-              value={metrics.totalLeads}
-              prefix={<UserOutlined />}
-              valueStyle={{ color: '#1890ff' }}
-            />
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} lg={6}>
-          <Card>
-            <Statistic
-              title="Updated Leads"
-              value={metrics.updatedLeads}
-              prefix={<ClockCircleOutlined />}
-              valueStyle={{ color: '#faad14' }}
-              suffix={
-                <Text type="secondary" style={{ fontSize: '14px' }}>
-                  / {metrics.totalLeads}
-                </Text>
-              }
-            />
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} lg={6}>
-          <Card>
-            <Statistic
-              title="Potential Leads"
-              value={metrics.potentialLeads}
-              prefix={<FireOutlined />}
-              valueStyle={{ color: '#ff4d4f' }}
-            />
-          </Card>
-        </Col>
-        <Col xs={24} sm={12} lg={6}>
-          <Card>
-            <Statistic
-              title="Enrolled"
-              value={metrics.enrolled}
-              prefix={<CheckCircleOutlined />}
-              valueStyle={{ color: '#52c41a' }}
-              suffix={
-                <Text type="secondary" style={{ fontSize: '14px' }}>
-                  ({metrics.conversionRate}%)
-                </Text>
-              }
-            />
-          </Card>
-        </Col>
-      </Row>
-
-      {/* Revenue Metrics */}
-      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-        <Col xs={24} sm={12}>
-          <Card>
-            <Statistic
-              title="Total Revenue (Enrolled)"
-              value={metrics.totalRevenue}
-              prefix="₹"
-              precision={0}
-              valueStyle={{ color: '#52c41a', fontSize: '28px' }}
-            />
-          </Card>
-        </Col>
-        <Col xs={24} sm={12}>
-          <Card>
-            <Statistic
-              title="Expected Revenue (Potential)"
-              value={metrics.expectedRevenue}
-              prefix="₹"
-              precision={0}
-              valueStyle={{ color: '#faad14', fontSize: '28px' }}
-            />
-          </Card>
-        </Col>
-      </Row>
-
-      {/* Tabs for different views */}
-      <Tabs 
-        activeKey={activeTab} 
+      <Tabs
+        activeKey={activeTab}
         onChange={setActiveTab}
         items={[
+          // ── Tab 1: Daily View ──────────────────────────────────────────────
           {
-            key: 'overview',
-            label: <span><LineChartOutlined /> Overview</span>,
+            key: 'daily',
+            label: <span><CalendarOutlined /> Daily Activity</span>,
             children: (
-              <>
-                {/* Charts */}
-                <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-                  <Col xs={24} lg={16}>
-                    <Card title="Daily Activity Trend" bordered={false}>
-                      <ResponsiveContainer width="100%" height={300}>
-                        <LineChart data={dailyActivityData}>
-                          <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis dataKey="date" />
-                          <YAxis />
-                          <RechartsTooltip />
-                          <Legend />
-                          <Line type="monotone" dataKey="updated" stroke="#1890ff" strokeWidth={2} name="Updated" />
-                          <Line type="monotone" dataKey="potential" stroke="#faad14" strokeWidth={2} name="Potential" />
-                          <Line type="monotone" dataKey="enrolled" stroke="#52c41a" strokeWidth={2} name="Enrolled" />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </Card>
-                  </Col>
-
-                  <Col xs={24} lg={8}>
-                    <Card title="Status Distribution" bordered={false}>
-                      <ResponsiveContainer width="100%" height={300}>
-                        <PieChart>
-                          <Pie
-                            data={statusDistribution}
-                            cx="50%"
-                            cy="50%"
-                            labelLine={false}
-                            label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                            outerRadius={80}
-                            fill="#8884d8"
-                            dataKey="value"
-                          >
-                            {statusDistribution.map((entry, index) => (
-                              <Cell key={`cell-${index}`} fill={entry.color} />
-                            ))}
-                          </Pie>
-                          <RechartsTooltip />
-                        </PieChart>
-                      </ResponsiveContainer>
-                    </Card>
-                  </Col>
-                </Row>
-
-                {/* Performance Breakdown */}
-                <Card title="Performance Breakdown" bordered={false}>
-                  <Row gutter={[16, 16]}>
-                    <Col xs={24} sm={12} md={6}>
-                      <Card size="small" style={{ backgroundColor: '#f6ffed', borderColor: '#b7eb8f' }}>
-                        <Statistic
-                          title="Enrolled"
-                          value={metrics.enrolled}
-                          valueStyle={{ color: '#52c41a' }}
-                          prefix={<CheckCircleOutlined />}
-                        />
-                        <Progress 
-                          percent={metrics.totalLeads > 0 ? (metrics.enrolled / metrics.totalLeads * 100).toFixed(1) : 0} 
-                          strokeColor="#52c41a"
-                          size="small"
-                        />
-                      </Card>
-                    </Col>
-                    <Col xs={24} sm={12} md={6}>
-                      <Card size="small" style={{ backgroundColor: '#fff1f0', borderColor: '#ffccc7' }}>
-                        <Statistic
-                          title="Hot"
-                          value={metrics.hot}
-                          valueStyle={{ color: '#ff4d4f' }}
-                          prefix={<FireOutlined />}
-                        />
-                        <Progress 
-                          percent={metrics.totalLeads > 0 ? (metrics.hot / metrics.totalLeads * 100).toFixed(1) : 0} 
-                          strokeColor="#ff4d4f"
-                          size="small"
-                        />
-                      </Card>
-                    </Col>
-                    <Col xs={24} sm={12} md={6}>
-                      <Card size="small" style={{ backgroundColor: '#fffbe6', borderColor: '#ffe58f' }}>
-                        <Statistic
-                          title="Warm"
-                          value={metrics.warm}
-                          valueStyle={{ color: '#faad14' }}
-                          prefix={<RiseOutlined />}
-                        />
-                        <Progress 
-                          percent={metrics.totalLeads > 0 ? (metrics.warm / metrics.totalLeads * 100).toFixed(1) : 0} 
-                          strokeColor="#faad14"
-                          size="small"
-                        />
-                      </Card>
-                    </Col>
-                    <Col xs={24} sm={12} md={6}>
-                      <Card size="small" style={{ backgroundColor: '#f5f5f5', borderColor: '#d9d9d9' }}>
-                        <Statistic
-                          title="Lost"
-                          value={metrics.lost}
-                          valueStyle={{ color: '#8c8c8c' }}
-                          prefix={<FallOutlined />}
-                        />
-                        <Progress 
-                          percent={metrics.totalLeads > 0 ? (metrics.lost / metrics.totalLeads * 100).toFixed(1) : 0} 
-                          strokeColor="#8c8c8c"
-                          size="small"
-                        />
-                      </Card>
-                    </Col>
-                  </Row>
+              <div>
+                {/* Controls */}
+                <Card size="small" style={{ marginBottom: 16 }}>
+                  <Space wrap>
+                    <Text strong><FilterOutlined /> Date:</Text>
+                    <DatePicker
+                      value={selectedDate}
+                      onChange={setSelectedDate}
+                      format="DD MMM YYYY"
+                      allowClear={false}
+                    />
+                    <Text strong>Counselor:</Text>
+                    <Select style={{ width: 200 }} placeholder="All counselors" allowClear
+                      value={selectedCounselor} onChange={setSelectedCounselor}>
+                      {users.map(u => <Option key={u.id} value={u.full_name}>{u.full_name}</Option>)}
+                    </Select>
+                    <Button icon={<ReloadOutlined />} onClick={refetchDaily}>Refresh</Button>
+                  </Space>
                 </Card>
-              </>
-            )
+
+                {/* Summary cards */}
+                {!dailyLoading && dailyData && (
+                  <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+                    {[
+                      { label: 'Total Actions', value: counselors.reduce((s, c) => s + c.total_actions, 0), color: '#1890ff' },
+                      { label: 'Calls Made',    value: counselors.reduce((s, c) => s + c.calls, 0),         color: '#1890ff', icon: <PhoneOutlined /> },
+                      { label: 'WhatsApp Sent', value: counselors.reduce((s, c) => s + c.whatsapp_sent, 0), color: '#25D366', icon: <WhatsAppOutlined /> },
+                      { label: 'Emails Sent',   value: counselors.reduce((s, c) => s + c.emails_sent, 0),   color: '#fa8c16', icon: <MailOutlined /> },
+                      { label: 'Notes Added',   value: counselors.reduce((s, c) => s + c.notes_added, 0),   color: '#722ed1', icon: <CommentOutlined /> },
+                      { label: 'Status Updates',value: counselors.reduce((s, c) => s + c.status_changes, 0),color: '#eb2f96', icon: <SwapOutlined /> },
+                    ].map(card => (
+                      <Col key={card.label} xs={12} sm={8} md={6} lg={4}>
+                        <Card size="small" hoverable>
+                          <Statistic title={card.label} value={card.value}
+                            prefix={card.icon}
+                            valueStyle={{ color: card.color, fontSize: 20, fontWeight: 700 }} />
+                        </Card>
+                      </Col>
+                    ))}
+                  </Row>
+                )}
+
+                {/* Bar chart */}
+                {!dailyLoading && dailyBarData.length > 0 && (
+                  <Card title={`Activity Breakdown — ${selectedDate?.format('DD MMM YYYY')}`}
+                    style={{ marginBottom: 16 }}>
+                    <ResponsiveContainer width="100%" height={280}>
+                      <BarChart data={dailyBarData} margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="name" />
+                        <YAxis allowDecimals={false} />
+                        <RechartsTooltip />
+                        <Legend />
+                        <Bar dataKey="Calls"          fill="#1890ff" />
+                        <Bar dataKey="WhatsApp"       fill="#25D366" />
+                        <Bar dataKey="Email"          fill="#fa8c16" />
+                        <Bar dataKey="Notes"          fill="#722ed1" />
+                        <Bar dataKey="Status Changes" fill="#eb2f96" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </Card>
+                )}
+
+                {/* Counselor table */}
+                <Card title="Per-Counselor Breakdown">
+                  {dailyLoading ? <Spin /> : counselors.length === 0 ? (
+                    <Empty description={`No activity recorded on ${selectedDate?.format('DD MMM YYYY')}`} />
+                  ) : (
+                    <Table
+                      dataSource={counselors}
+                      columns={dailyColumns}
+                      rowKey="counselor"
+                      size="small"
+                      pagination={false}
+                      expandable={{
+                        expandedRowRender: record => (
+                          <Timeline style={{ padding: '12px 0' }}
+                            items={record.actions.slice(0, 20).map(a => ({
+                              color: getMeta(a.type).color,
+                              dot: getMeta(a.type).icon,
+                              children: (
+                                <div>
+                                  <Tag color={getMeta(a.type).color}>{getMeta(a.type).label}</Tag>
+                                  <Text>{a.description}</Text>
+                                  <div style={{ fontSize: 11, color: '#8c8c8c', marginTop: 2 }}>
+                                    {dayjs(a.time).format('HH:mm')} · Lead #{a.lead_id}
+                                  </div>
+                                </div>
+                              ),
+                            }))}
+                          />
+                        ),
+                        rowExpandable: r => r.actions?.length > 0,
+                      }}
+                    />
+                  )}
+                </Card>
+              </div>
+            ),
           },
+
+          // ── Tab 2: Period Summary ──────────────────────────────────────────
           {
-            key: 'leaderboard',
+            key: 'summary',
             label: <span><TrophyOutlined /> Leaderboard</span>,
             children: (
-              <Card title="User Performance Leaderboard" bordered={false}>
-                <Table
-                  columns={leaderboardColumns}
-                  dataSource={usersWithMetrics}
-                  rowKey="id"
-                  pagination={{ pageSize: 10 }}
-                  loading={usersLoading}
-                />
-              </Card>
-            )
-          }
+              <div>
+                <Card size="small" style={{ marginBottom: 16 }}>
+                  <Space wrap>
+                    <Text strong>Period:</Text>
+                    <RangePicker
+                      value={summaryRange}
+                      onChange={setSummaryRange}
+                      format="DD MMM YYYY"
+                      presets={[
+                        { label: 'Today',      value: [dayjs(), dayjs()] },
+                        { label: 'This Week',  value: [dayjs().startOf('week'), dayjs()] },
+                        { label: 'Last 7 Days',value: [dayjs().subtract(7, 'day'), dayjs()] },
+                        { label: 'Last 30 Days',value:[dayjs().subtract(30, 'day'), dayjs()] },
+                        { label: 'This Month', value: [dayjs().startOf('month'), dayjs()] },
+                      ]}
+                    />
+                    <Button icon={<ReloadOutlined />} onClick={refetchSummary}>Refresh</Button>
+                  </Space>
+                </Card>
+
+                {/* Leaderboard bar chart */}
+                {!summaryLoading && allCounselors.length > 0 && (
+                  <Card title="Total Actions per Counselor" style={{ marginBottom: 16 }}>
+                    <ResponsiveContainer width="100%" height={260}>
+                      <BarChart data={allCounselors.map(c => ({
+                        name: c.counselor.split(' ')[0],
+                        Calls: c.calls, WhatsApp: c.whatsapp, Emails: c.emails,
+                        Notes: c.notes, 'Status Chg': c.status_changes,
+                      }))}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="name" />
+                        <YAxis allowDecimals={false} />
+                        <RechartsTooltip />
+                        <Legend />
+                        <Bar dataKey="Calls"       fill="#1890ff" />
+                        <Bar dataKey="WhatsApp"    fill="#25D366" />
+                        <Bar dataKey="Emails"      fill="#fa8c16" />
+                        <Bar dataKey="Notes"       fill="#722ed1" />
+                        <Bar dataKey="Status Chg"  fill="#eb2f96" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </Card>
+                )}
+
+                <Card title="Counselor Leaderboard">
+                  {summaryLoading ? <Spin /> : (
+                    <Table
+                      dataSource={allCounselors}
+                      columns={summaryColumns}
+                      rowKey="counselor"
+                      size="small"
+                      pagination={{ pageSize: 20 }}
+                    />
+                  )}
+                </Card>
+              </div>
+            ),
+          },
+
+          // ── Tab 3: Activity Log ────────────────────────────────────────────
+          {
+            key: 'log',
+            label: <span><FilterOutlined /> Activity Log</span>,
+            children: (
+              <div>
+                <Card size="small" style={{ marginBottom: 16 }}>
+                  <Space wrap>
+                    <Text strong>Counselor:</Text>
+                    <Select style={{ width: 180 }} placeholder="All" allowClear
+                      value={logFilters.counselor}
+                      onChange={v => setLogFilters(f => ({ ...f, counselor: v }))}>
+                      {users.map(u => <Option key={u.id} value={u.full_name}>{u.full_name}</Option>)}
+                    </Select>
+
+                    <Text strong>Type:</Text>
+                    <Select style={{ width: 160 }} placeholder="All types" allowClear
+                      value={logFilters.activity_type}
+                      onChange={v => setLogFilters(f => ({ ...f, activity_type: v }))}>
+                      {Object.entries(ACTIVITY_META).map(([k, v]) => (
+                        <Option key={k} value={k}><Tag color={v.color}>{v.label}</Tag></Option>
+                      ))}
+                    </Select>
+
+                    <Text strong>Lead ID:</Text>
+                    <Input style={{ width: 130 }} placeholder="LEAD00001" allowClear
+                      value={logFilters.lead_id_filter}
+                      onChange={e => setLogFilters(f => ({ ...f, lead_id_filter: e.target.value }))}
+                      prefix={<SearchOutlined />}
+                    />
+
+                    <Button icon={<ReloadOutlined />} onClick={refetchLog}>Refresh</Button>
+                  </Space>
+                </Card>
+
+                <Card title={`Activity Log${logData ? ` — ${logData.total} entries` : ''}`}>
+                  {logLoading ? <Spin /> : (
+                    <Table
+                      dataSource={logData?.logs || []}
+                      columns={logColumns}
+                      rowKey="id"
+                      size="small"
+                      pagination={{ pageSize: 50, showTotal: t => `${t} entries` }}
+                    />
+                  )}
+                </Card>
+              </div>
+            ),
+          },
         ]}
       />
     </div>

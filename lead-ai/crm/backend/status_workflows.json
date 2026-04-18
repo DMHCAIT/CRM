@@ -1,0 +1,186 @@
+[
+  {
+    "name": "Hot Lead Follow-up",
+    "description": "Automatically prioritize hot leads with immediate follow-up",
+    "trigger": "status_change",
+    "statuses": ["hot"],
+    "conditions": {
+      "min_score": 80
+    },
+    "actions": [
+      {
+        "type": "schedule_followup",
+        "hours_ahead": 2,
+        "priority": "P0"
+      },
+      {
+        "type": "add_note",
+        "note": "🔥 Hot lead - prioritized for immediate follow-up"
+      }
+    ],
+    "enabled": true
+  },
+  {
+    "name": "Enrollment Welcome Sequence",
+    "description": "Send welcome email and payment reminder when lead enrolls",
+    "trigger": "status_change",
+    "statuses": ["enrolled"],
+    "conditions": {},
+    "actions": [
+      {
+        "type": "send_email",
+        "template": "welcome_enrolled"
+      },
+      {
+        "type": "send_whatsapp",
+        "template": "payment_reminder"
+      },
+      {
+        "type": "add_note",
+        "note": "✅ Enrolled - welcome email and payment link sent automatically"
+      }
+    ],
+    "enabled": true
+  },
+  {
+    "name": "Not Answering Retry Logic",
+    "description": "Schedule retry attempts when lead doesn't answer",
+    "trigger": "status_change",
+    "statuses": ["not_answering"],
+    "conditions": {},
+    "actions": [
+      {
+        "type": "schedule_followup",
+        "hours_ahead": 48,
+        "priority": "P2"
+      },
+      {
+        "type": "add_note",
+        "note": "📞 Not answering - scheduled retry in 2 days"
+      }
+    ],
+    "enabled": true
+  },
+  {
+    "name": "Qualified Lead Demo Scheduling",
+    "description": "Prioritize qualified leads for demo scheduling",
+    "trigger": "status_change",
+    "statuses": ["qualified"],
+    "conditions": {},
+    "actions": [
+      {
+        "type": "schedule_followup",
+        "hours_ahead": 12,
+        "priority": "P0"
+      },
+      {
+        "type": "create_task",
+        "description": "Schedule product demo with qualified lead"
+      },
+      {
+        "type": "update_priority",
+        "priority": "P0"
+      }
+    ],
+    "enabled": true
+  },
+  {
+    "name": "Cold Lead Nurture",
+    "description": "Add cold leads to nurture campaign",
+    "trigger": "status_change",
+    "statuses": ["cold"],
+    "conditions": {
+      "max_score": 40
+    },
+    "actions": [
+      {
+        "type": "schedule_followup",
+        "hours_ahead": 168,
+        "priority": "P3"
+      },
+      {
+        "type": "add_note",
+        "note": "❄️ Cold lead - added to 7-day nurture sequence"
+      }
+    ],
+    "enabled": true
+  },
+  {
+    "name": "Churn Prevention Alert",
+    "description": "Trigger retention workflow for high-value leads at risk",
+    "trigger": "event",
+    "event_type": "high_churn_risk",
+    "conditions": {
+      "min_score": 60
+    },
+    "actions": [
+      {
+        "type": "assign_to",
+        "strategy": "top_performer"
+      },
+      {
+        "type": "send_whatsapp",
+        "template": "retention_offer"
+      },
+      {
+        "type": "update_priority",
+        "priority": "P0"
+      },
+      {
+        "type": "create_task",
+        "description": "⚠️ HIGH PRIORITY: Prevent churn - contact immediately with retention offer"
+      }
+    ],
+    "enabled": true
+  },
+  {
+    "name": "Stale Lead Reactivation",
+    "description": "Re-engage leads inactive for 7+ days",
+    "trigger": "event",
+    "event_type": "lead_inactive",
+    "conditions": {
+      "days_inactive": 7
+    },
+    "actions": [
+      {
+        "type": "create_task",
+        "description": "Follow up with inactive lead - attempt re-engagement"
+      },
+      {
+        "type": "send_whatsapp",
+        "template": "reengagement"
+      },
+      {
+        "type": "schedule_followup",
+        "hours_ahead": 72,
+        "priority": "P2"
+      }
+    ],
+    "enabled": true
+  },
+  {
+    "name": "High Score New Lead",
+    "description": "Immediately assign and schedule high-scoring new leads",
+    "trigger": "event",
+    "event_type": "lead_created",
+    "conditions": {
+      "min_score": 75
+    },
+    "actions": [
+      {
+        "type": "assign_to",
+        "strategy": "intelligent"
+      },
+      {
+        "type": "schedule_followup",
+        "hours_ahead": 1,
+        "priority": "P0"
+      },
+      {
+        "type": "send_whatsapp",
+        "template": "new_lead_welcome"
+      }
+    ],
+    "enabled": true
+  }
+]

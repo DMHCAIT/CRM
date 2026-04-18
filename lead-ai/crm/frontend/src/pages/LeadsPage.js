@@ -5,7 +5,6 @@ import {
   Table,
   Button,
   Tag,
-  Progress,
   Space,
   Input,
   Select,
@@ -17,8 +16,9 @@ import {
   Row,
   Col,
   Card,
-  Badge,
   Tooltip,
+  Modal,
+  Typography,
 } from 'antd';
 import {
   PlusOutlined,
@@ -30,145 +30,301 @@ import {
   DeleteOutlined,
   ReloadOutlined,
   PhoneOutlined,
+  EditOutlined,
+  CommentOutlined,
 } from '@ant-design/icons';
 import { leadsAPI, coursesAPI, counselorsAPI } from '../api/api';
 import ChatInterface from '../components/ChatInterface';
 import CallInterface from '../components/CallInterface';
 import dayjs from 'dayjs';
 
-const { RangePicker } = DatePicker;
 const { Option } = Select;
+const { RangePicker } = DatePicker;
+const { Text } = Typography;
+const { TextArea } = Input;
+
+// ── helpers ────────────────────────────────────────────────────────────────
+
+const STATUS_COLORS = {
+  Fresh: 'cyan',
+  'Follow Up': 'blue',
+  Warm: 'orange',
+  Hot: 'red',
+  'Not Interested': 'default',
+  Junk: 'default',
+  'Not Answering': 'purple',
+  Enrolled: 'green',
+};
+
+const COUNTRIES = [
+  'India', 'UAE', 'Saudi Arabia', 'Kuwait', 'Oman', 'Qatar', 'Bahrain',
+  'USA', 'UK', 'Canada', 'Australia', 'Germany', 'Singapore',
+];
+
+const SOURCES = [
+  'Facebook', 'Instagram', 'Google Ads', 'YouTube', 'LinkedIn',
+  'Website', 'Referral', 'WhatsApp', 'Cold Call', 'Walk In', 'Email Campaign',
+];
+
+const QUALIFICATIONS = [
+  'MBBS', 'MD', 'MS', 'BDS', 'MDS', 'BAMS', 'BHMS', 'B.Sc Nursing',
+  'M.Sc Nursing', 'BPT', 'MPT', 'DMLT', 'B.Pharma', 'M.Pharma', 'Other',
+];
+
+const STATUSES = [
+  'Fresh', 'Follow Up', 'Warm', 'Hot', 'Enrolled',
+  'Will Enroll Later', 'Not Answering', 'Not Interested', 'Junk',
+];
+
+const STATUS_COLORS_FULL = {
+  Fresh: 'cyan',
+  'Follow Up': 'blue',
+  Warm: 'orange',
+  Hot: 'red',
+  Enrolled: 'green',
+  'Will Enroll Later': 'purple',
+  'Not Answering': 'geekblue',
+  'Not Interested': 'default',
+  Junk: 'default',
+};
+
+// ── component ───────────────────────────────────────────────────────────────
 
 const LeadsPage = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [drawerVisible, setDrawerVisible] = useState(false);
-  const [filterDrawerVisible, setFilterDrawerVisible] = useState(false);
+
+  const [createDrawerOpen, setCreateDrawerOpen] = useState(false);
+  const [editDrawerOpen, setEditDrawerOpen] = useState(false);
+  const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
+  const [notesModalOpen, setNotesModalOpen] = useState(false);
+
+  const [selectedLead, setSelectedLead] = useState(null);
   const [filters, setFilters] = useState({});
-  const [form] = Form.useForm();
-  
-  // Communication modals
+  const [searchText, setSearchText] = useState('');
+
+  const [createForm] = Form.useForm();
+  const [editForm] = Form.useForm();
+
+  // Communication
   const [chatVisible, setChatVisible] = useState(false);
   const [callVisible, setCallVisible] = useState(false);
-  const [emailVisible, setEmailVisible] = useState(false);
-  const [selectedLead, setSelectedLead] = useState(null);
   const [communicationType, setCommunicationType] = useState('whatsapp');
 
-  // Fetch data
-  const { data: leads, isLoading, refetch } = useQuery({
+  // ── queries ──────────────────────────────────────────────────────────────
+
+  const { data: leads = [], isLoading, refetch } = useQuery({
     queryKey: ['leads', filters],
-    queryFn: () => leadsAPI.getAll(filters).then(res => res.data),
-    keepPreviousData: true
+    queryFn: () => leadsAPI.getAll(filters).then(r => r.data),
+    keepPreviousData: true,
   });
 
-  const { data: courses } = useQuery({
+  const { data: courses = [] } = useQuery({
     queryKey: ['courses'],
-    queryFn: () => coursesAPI.getAll().then(res => res.data)
+    queryFn: () => coursesAPI.getAll().then(r => r.data),
   });
 
-  const { data: counselors } = useQuery({
+  const { data: counselors = [] } = useQuery({
     queryKey: ['counselors'],
-    queryFn: () => counselorsAPI.getAll().then(res => res.data)
+    queryFn: () => counselorsAPI.getAll().then(r => r.data),
   });
 
-  // Create lead mutation
-  const createLeadMutation = useMutation({
-    mutationFn: (data) => leadsAPI.create(data),
+  // ── mutations ────────────────────────────────────────────────────────────
+
+  const createMutation = useMutation({
+    mutationFn: data => leadsAPI.create(data),
     onSuccess: () => {
-      message.success('Lead created successfully!');
-      setDrawerVisible(false);
-      form.resetFields();
+      message.success('Lead created successfully');
+      setCreateDrawerOpen(false);
+      createForm.resetFields();
       queryClient.invalidateQueries({ queryKey: ['leads'] });
     },
-    onError: (error) => {
-      message.error(`Failed to create lead: ${error.message}`);
-    },
+    onError: err => message.error(`Failed: ${err.message}`),
   });
 
-  // Delete lead mutation
-  const deleteLeadMutation = useMutation({
-    mutationFn: (leadId) => leadsAPI.delete(leadId),
+  const updateMutation = useMutation({
+    mutationFn: ({ leadId, data }) => leadsAPI.update(leadId, data),
     onSuccess: () => {
-      message.success('Lead deleted successfully!');
+      message.success('Lead updated');
+      setEditDrawerOpen(false);
       queryClient.invalidateQueries({ queryKey: ['leads'] });
     },
-    onError: (error) => {
-      message.error(`Failed to delete lead: ${error.message}`);
-    },
+    onError: err => message.error(`Failed: ${err.message}`),
   });
 
-  const handleCreateLead = (values) => {
-    createLeadMutation.mutate(values);
+  const deleteMutation = useMutation({
+    mutationFn: leadId => leadsAPI.delete(leadId),
+    onSuccess: () => {
+      message.success('Lead deleted');
+      queryClient.invalidateQueries({ queryKey: ['leads'] });
+    },
+    onError: err => message.error(`Failed: ${err.message}`),
+  });
+
+  const addNoteMutation = useMutation({
+    mutationFn: ({ leadId, data }) => leadsAPI.addNote(leadId, data),
+    onSuccess: () => {
+      message.success('Note added');
+      queryClient.invalidateQueries({ queryKey: ['leads'] });
+    },
+    onError: err => message.error(`Failed: ${err.message}`),
+  });
+
+  // ── handlers ─────────────────────────────────────────────────────────────
+
+  const openEdit = lead => {
+    setSelectedLead(lead);
+    editForm.setFieldsValue({
+      full_name: lead.full_name,
+      email: lead.email,
+      phone: lead.phone,
+      whatsapp: lead.whatsapp,
+      country: lead.country,
+      branch: lead.branch,
+      qualification: lead.qualification,
+      source: lead.source,
+      course_interested: lead.course_interested,
+      company: lead.company,
+      status: lead.status,
+      assigned_to: lead.assigned_to,
+      follow_up_date: lead.follow_up_date ? dayjs(lead.follow_up_date) : null,
+    });
+    setEditDrawerOpen(true);
+  };
+
+  const handleEdit = values => {
+    const payload = { ...values };
+    if (payload.follow_up_date) {
+      payload.follow_up_date = payload.follow_up_date.toISOString();
+    }
+    updateMutation.mutate({ leadId: selectedLead.lead_id, data: payload });
+  };
+
+  const openNotes = lead => {
+    setSelectedLead(lead);
+    setNotesModalOpen(true);
+  };
+
+  const handleAddNote = values => {
+    addNoteMutation.mutate({
+      leadId: selectedLead.lead_id,
+      data: { content: values.content, created_by: 'Counselor', channel: 'manual' },
+    });
   };
 
   const handleFilter = (key, value) => {
-    setFilters(prev => ({
-      ...prev,
-      [key]: value,
-    }));
+    setFilters(prev => ({ ...prev, [key]: value || undefined }));
   };
 
   const clearFilters = () => {
-    setFilters({});
+    setFilters({ _updatedMode: undefined });
+    setSearchText('');
   };
 
-  // Get unique countries from leads
-  const countries = [...new Set((leads || []).map(lead => lead.country))];
+  // client-side search across visible text fields
+  const displayed = leads.filter(lead => {
+    if (!searchText) return true;
+    const q = searchText.toLowerCase();
+    return (
+      lead.full_name?.toLowerCase().includes(q) ||
+      lead.phone?.toLowerCase().includes(q) ||
+      lead.email?.toLowerCase().includes(q) ||
+      lead.lead_id?.toLowerCase().includes(q) ||
+      lead.company?.toLowerCase().includes(q) ||
+      lead.branch?.toLowerCase().includes(q)
+    );
+  });
+
+  // summary stats
+  const totalRevenue = leads.reduce((s, l) => s + (l.actual_revenue || 0), 0);
+  const hotLeads    = leads.filter(l => l.ai_segment === 'Hot').length;
+  const enrolled    = leads.filter(l => l.status === 'Enrolled').length;
+  const todayFollowups = leads.filter(l =>
+    l.follow_up_date && dayjs(l.follow_up_date).isSame(dayjs(), 'day')
+  ).length;
+
+  // ── columns ───────────────────────────────────────────────────────────────
 
   const columns = [
     {
-      title: 'Lead ID',
+      title: 'ID',
       dataIndex: 'lead_id',
       key: 'lead_id',
       fixed: 'left',
-      width: 120,
-      render: (text, record) => (
-        <a onClick={() => navigate(`/leads/${text}`)} style={{ fontWeight: 600 }}>
+      width: 110,
+      render: text => (
+        <a onClick={() => navigate(`/leads/${text}`)} style={{ fontWeight: 600, fontSize: 12 }}>
           {text}
         </a>
       ),
     },
     {
-      title: 'Name',
+      title: 'Full Name',
       dataIndex: 'full_name',
       key: 'full_name',
-      width: 180,
-      filterDropdown: ({ setSelectedKeys, selectedKeys, confirm }) => (
-        <div style={{ padding: 8 }}>
-          <Input
-            placeholder="Search name"
-            value={selectedKeys[0]}
-            onChange={e => setSelectedKeys(e.target.value ? [e.target.value] : [])}
-            onPressEnter={() => confirm()}
-            style={{ width: 188, marginBottom: 8, display: 'block' }}
-          />
-          <Button
-            type="primary"
-            onClick={() => confirm()}
-            icon={<SearchOutlined />}
-            size="small"
-            style={{ width: 90, marginRight: 8 }}
-          >
-            Search
-          </Button>
+      width: 170,
+      sorter: (a, b) => a.full_name.localeCompare(b.full_name),
+      render: (name, record) => (
+        <div>
+          <div style={{ fontWeight: 500 }}>{name}</div>
+          {record.company && (
+            <div style={{ fontSize: 11, color: '#8c8c8c' }}>{record.company}</div>
+          )}
         </div>
       ),
-      filterIcon: filtered => <SearchOutlined style={{ color: filtered ? '#1890ff' : undefined }} />,
-      onFilter: (value, record) => record.full_name.toLowerCase().includes(value.toLowerCase()),
     },
     {
-      title: 'Country',
-      dataIndex: 'country',
-      key: 'country',
-      width: 120,
-      filters: countries.map(c => ({ text: c, value: c })),
-      onFilter: (value, record) => record.country === value,
+      title: 'Email',
+      dataIndex: 'email',
+      key: 'email',
+      width: 190,
+      ellipsis: true,
+      render: email => email || <Text type="secondary">—</Text>,
     },
     {
       title: 'Phone',
       dataIndex: 'phone',
       key: 'phone',
       width: 140,
+    },
+    {
+      title: 'Country',
+      dataIndex: 'country',
+      key: 'country',
+      width: 110,
+      filters: [...new Set(leads.map(l => l.country))].map(c => ({ text: c, value: c })),
+      onFilter: (v, r) => r.country === v,
+    },
+    {
+      title: 'Branch',
+      dataIndex: 'branch',
+      key: 'branch',
+      width: 130,
+      render: v => v || <Text type="secondary">—</Text>,
+    },
+    {
+      title: 'Qualification',
+      dataIndex: 'qualification',
+      key: 'qualification',
+      width: 130,
+      render: v => v ? <Tag>{v}</Tag> : <Text type="secondary">—</Text>,
+    },
+    {
+      title: 'Source',
+      dataIndex: 'source',
+      key: 'source',
+      width: 120,
+      filters: SOURCES.map(s => ({ text: s, value: s })),
+      onFilter: (v, r) => r.source === v,
+      render: source => {
+        const sourceColors = {
+          Facebook: 'blue', Instagram: 'magenta', 'Google Ads': 'gold',
+          YouTube: 'red', LinkedIn: 'geekblue', Website: 'cyan',
+          Referral: 'green', WhatsApp: 'lime', 'Cold Call': 'orange',
+          'Walk In': 'purple', 'Email Campaign': 'volcano',
+        };
+        return <Tag color={sourceColors[source] || 'default'}>{source}</Tag>;
+      },
     },
     {
       title: 'Course',
@@ -182,523 +338,518 @@ const LeadsPage = () => {
       dataIndex: 'status',
       key: 'status',
       width: 130,
-      filters: [
-        { text: 'Fresh', value: 'Fresh' },
-        { text: 'Follow Up', value: 'Follow Up' },
-        { text: 'Warm', value: 'Warm' },
-        { text: 'Hot', value: 'Hot' },
-        { text: 'Not Interested', value: 'Not Interested' },
-        { text: 'Junk', value: 'Junk' },
-        { text: 'Not Answering', value: 'Not Answering' },
-        { text: 'Enrolled', value: 'Enrolled' },
-      ],
-      onFilter: (value, record) => record.status === value,
-      render: (status) => {
-        const colors = {
-          'Fresh': 'cyan',
-          'Follow Up': 'blue',
-          'Warm': 'orange',
-          'Hot': 'red',
-          'Not Interested': 'default',
-          'Junk': 'default',
-          'Not Answering': 'purple',
-          'Enrolled': 'green',
-        };
-        return <Tag color={colors[status]}>{status}</Tag>;
-      },
-    },
-    {
-      title: 'AI Score',
-      dataIndex: 'ai_score',
-      key: 'ai_score',
-      width: 120,
-      sorter: (a, b) => a.ai_score - b.ai_score,
-      render: (score) => (
-        <Progress
-          percent={score}
-          size="small"
-          strokeColor={
-            score >= 75 ? '#ff4d4f' :
-            score >= 50 ? '#faad14' :
-            score >= 25 ? '#52c41a' : '#8c8c8c'
-          }
-          format={(percent) => `${percent.toFixed(0)}`}
-        />
-      ),
-    },
-    {
-      title: 'Segment',
-      dataIndex: 'ai_segment',
-      key: 'ai_segment',
-      width: 100,
-      filters: [
-        { text: 'Hot', value: 'Hot' },
-        { text: 'Warm', value: 'Warm' },
-        { text: 'Cold', value: 'Cold' },
-        { text: 'Junk', value: 'Junk' },
-      ],
-      onFilter: (value, record) => record.ai_segment === value,
-      render: (segment) => (
-        <Badge
-          color={
-            segment === 'Hot' ? 'red' :
-            segment === 'Warm' ? 'orange' :
-            segment === 'Cold' ? 'green' : 'default'
-          }
-          text={segment}
-        />
-      ),
-    },
-    {
-      title: 'Revenue',
-      key: 'revenue',
-      width: 150,
-      render: (_, record) => (
-        <div>
-          {record.status === 'Enrolled' ? (
-            <div>
-              <div style={{ color: '#52c41a', fontWeight: 600 }}>
-                ₹{(record.actual_revenue / 1000).toFixed(0)}K
-              </div>
-              <div style={{ fontSize: '12px', color: '#8c8c8c' }}>Total Revenue</div>
-            </div>
-          ) : (
-            <div>
-              <div style={{ color: '#faad14', fontWeight: 600 }}>
-                ₹{(record.expected_revenue / 1000).toFixed(0)}K
-              </div>
-              <div style={{ fontSize: '12px', color: '#8c8c8c' }}>Expected</div>
-            </div>
-          )}
-        </div>
-      ),
-    },
-    {
-      title: 'Follow Up',
-      dataIndex: 'follow_up_date',
-      key: 'follow_up_date',
-      width: 150,
-      sorter: (a, b) => new Date(a.follow_up_date) - new Date(b.follow_up_date),
-      render: (date) => date ? dayjs(date).format('MMM DD, YYYY') : '-',
+      filters: STATUSES.map(s => ({ text: s, value: s })),
+      onFilter: (v, r) => r.status === v,
+      render: status => <Tag color={STATUS_COLORS_FULL[status] || STATUS_COLORS[status]}>{status}</Tag>,
     },
     {
       title: 'Assigned To',
       dataIndex: 'assigned_to',
       key: 'assigned_to',
       width: 140,
+      render: v => v || <Text type="secondary">Unassigned</Text>,
     },
     {
-      title: 'Created',
+      title: 'Follow Up',
+      dataIndex: 'follow_up_date',
+      key: 'follow_up_date',
+      width: 130,
+      sorter: (a, b) => new Date(a.follow_up_date || 0) - new Date(b.follow_up_date || 0),
+      render: date => {
+        if (!date) return <Text type="secondary">—</Text>;
+        const d = dayjs(date);
+        const isToday  = d.isSame(dayjs(), 'day');
+        const isPast   = d.isBefore(dayjs(), 'day');
+        return (
+          <span style={{ color: isPast ? '#ff4d4f' : isToday ? '#faad14' : undefined, fontWeight: isToday ? 600 : undefined }}>
+            {d.format('DD MMM YYYY')}
+          </span>
+        );
+      },
+    },
+    {
+      title: 'Company',
+      dataIndex: 'company',
+      key: 'company',
+      width: 150,
+      ellipsis: true,
+      render: v => v || <Text type="secondary">—</Text>,
+    },
+    {
+      title: 'Notes',
+      key: 'notes',
+      width: 100,
+      render: (_, record) => {
+        const count = record.notes?.length || 0;
+        return (
+          <Button
+            type="text"
+            size="small"
+            icon={<CommentOutlined />}
+            onClick={() => openNotes(record)}
+            style={{ color: count > 0 ? '#1890ff' : '#8c8c8c' }}
+          >
+            {count > 0 ? count : 'Add'}
+          </Button>
+        );
+      },
+    },
+    {
+      title: 'Created At',
       dataIndex: 'created_at',
       key: 'created_at',
-      width: 150,
+      width: 130,
       sorter: (a, b) => new Date(a.created_at) - new Date(b.created_at),
-      render: (date) => dayjs(date).format('MMM DD, YYYY'),
+      defaultSortOrder: 'descend',
+      render: date => dayjs(date).format('DD MMM YYYY'),
+    },
+    {
+      title: 'Updated At',
+      dataIndex: 'updated_at',
+      key: 'updated_at',
+      width: 130,
+      sorter: (a, b) => new Date(a.updated_at) - new Date(b.updated_at),
+      render: date => date ? dayjs(date).format('DD MMM YYYY') : '—',
     },
     {
       title: 'Actions',
       key: 'actions',
       fixed: 'right',
-      width: 240,
+      width: 180,
       render: (_, record) => (
-        <Space>
+        <Space size={2}>
           <Tooltip title="View Details">
-            <Button
-              type="text"
-              icon={<EyeOutlined />}
-              onClick={() => navigate(`/leads/${record.lead_id}`)}
-            />
+            <Button type="text" size="small" icon={<EyeOutlined />}
+              onClick={() => navigate(`/leads/${record.lead_id}`)} />
+          </Tooltip>
+          <Tooltip title="Edit">
+            <Button type="text" size="small" icon={<EditOutlined />}
+              onClick={() => openEdit(record)} />
           </Tooltip>
           <Tooltip title="Call">
-            <Button
-              type="text"
-              icon={<PhoneOutlined />}
-              style={{ color: '#1890ff' }}
-              onClick={() => {
-                setSelectedLead(record);
-                setCallVisible(true);
-              }}
-              disabled={!record.phone}
-            />
+            <Button type="text" size="small" icon={<PhoneOutlined style={{ color: '#1890ff' }} />}
+              onClick={() => { setSelectedLead(record); setCallVisible(true); }}
+              disabled={!record.phone} />
           </Tooltip>
           <Tooltip title="WhatsApp">
-            <Button
-              type="text"
-              icon={<WhatsAppOutlined />}
-              style={{ color: '#25D366' }}
-              onClick={() => {
-                setSelectedLead(record);
-                setCommunicationType('whatsapp');
-                setChatVisible(true);
-              }}
-              disabled={!record.whatsapp}
-            />
+            <Button type="text" size="small" icon={<WhatsAppOutlined style={{ color: '#25D366' }} />}
+              onClick={() => { setSelectedLead(record); setCommunicationType('whatsapp'); setChatVisible(true); }}
+              disabled={!record.whatsapp} />
           </Tooltip>
           <Tooltip title="Email">
-            <Button
-              type="text"
-              icon={<MailOutlined />}
-              style={{ color: '#fa8c16' }}
-              onClick={() => {
-                setSelectedLead(record);
-                setCommunicationType('email');
-                setChatVisible(true);
-              }}
-              disabled={!record.email}
-            />
+            <Button type="text" size="small" icon={<MailOutlined style={{ color: '#fa8c16' }} />}
+              onClick={() => { setSelectedLead(record); setCommunicationType('email'); setChatVisible(true); }}
+              disabled={!record.email} />
           </Tooltip>
           <Popconfirm
-            title="Are you sure you want to delete this lead?"
-            onConfirm={() => deleteLeadMutation.mutate(record.lead_id)}
-            okText="Yes"
-            cancelText="No"
+            title="Delete this lead?"
+            onConfirm={() => deleteMutation.mutate(record.lead_id)}
+            okText="Yes" cancelText="No"
           >
-            <Button
-              type="text"
-              danger
-              icon={<DeleteOutlined />}
-            />
+            <Button type="text" size="small" danger icon={<DeleteOutlined />} />
           </Popconfirm>
         </Space>
       ),
     },
   ];
 
+  // ── shared form fields ────────────────────────────────────────────────────
+
+  const LeadFormFields = ({ forEdit = false }) => (
+    <>
+      <Row gutter={16}>
+        <Col span={12}>
+          <Form.Item name="full_name" label="Full Name" rules={[{ required: true }]}>
+            <Input placeholder="Dr. Jane Smith" />
+          </Form.Item>
+        </Col>
+        <Col span={12}>
+          <Form.Item name="phone" label="Phone" rules={[{ required: true }]}>
+            <Input placeholder="+91-9876543210" />
+          </Form.Item>
+        </Col>
+      </Row>
+      <Row gutter={16}>
+        <Col span={12}>
+          <Form.Item name="email" label="Email" rules={[{ type: 'email' }]}>
+            <Input placeholder="jane@hospital.com" />
+          </Form.Item>
+        </Col>
+        <Col span={12}>
+          <Form.Item name="whatsapp" label="WhatsApp">
+            <Input placeholder="+91-9876543210" />
+          </Form.Item>
+        </Col>
+      </Row>
+      <Row gutter={16}>
+        <Col span={12}>
+          <Form.Item name="country" label="Country" rules={[{ required: true }]}>
+            <Select placeholder="Select country" showSearch>
+              {COUNTRIES.map(c => <Option key={c} value={c}>{c}</Option>)}
+            </Select>
+          </Form.Item>
+        </Col>
+        <Col span={12}>
+          <Form.Item name="branch" label="Branch">
+            <Input placeholder="e.g. Delhi, Mumbai, Hyderabad" />
+          </Form.Item>
+        </Col>
+      </Row>
+      <Row gutter={16}>
+        <Col span={12}>
+          <Form.Item name="qualification" label="Qualification">
+            <Select placeholder="Select qualification" showSearch allowClear>
+              {QUALIFICATIONS.map(q => <Option key={q} value={q}>{q}</Option>)}
+            </Select>
+          </Form.Item>
+        </Col>
+        <Col span={12}>
+          <Form.Item name="company" label="Company / Hospital">
+            <Input placeholder="Apollo Hospitals, AIIMS..." />
+          </Form.Item>
+        </Col>
+      </Row>
+      <Row gutter={16}>
+        <Col span={12}>
+          <Form.Item name="source" label="Source" rules={[{ required: true }]}>
+            <Select placeholder="Select source">
+              {SOURCES.map(s => <Option key={s} value={s}>{s}</Option>)}
+            </Select>
+          </Form.Item>
+        </Col>
+        <Col span={12}>
+          <Form.Item name="course_interested" label="Course" rules={[{ required: true }]}>
+            <Select placeholder="Select course" showSearch>
+              {courses.map(c => (
+                <Option key={c.id} value={c.course_name}>
+                  {c.course_name} — ₹{(c.price / 1000).toFixed(0)}K
+                </Option>
+              ))}
+            </Select>
+          </Form.Item>
+        </Col>
+      </Row>
+      <Row gutter={16}>
+        <Col span={12}>
+          <Form.Item name="assigned_to" label="Assigned To">
+            <Select placeholder="Select counselor" allowClear showSearch>
+              {counselors.map(c => <Option key={c.id} value={c.name}>{c.name}</Option>)}
+            </Select>
+          </Form.Item>
+        </Col>
+        {forEdit && (
+          <Col span={12}>
+            <Form.Item name="status" label="Status">
+              <Select placeholder="Select status">
+                {STATUSES.map(s => <Option key={s} value={s}>{s}</Option>)}
+              </Select>
+            </Form.Item>
+          </Col>
+        )}
+      </Row>
+      {forEdit && (
+        <Row gutter={16}>
+          <Col span={12}>
+            <Form.Item name="follow_up_date" label="Follow Up Date">
+              <DatePicker style={{ width: '100%' }} />
+            </Form.Item>
+          </Col>
+          <Col span={12}>
+            <Form.Item name="source" label="Source">
+              <Select placeholder="Select source">
+                {SOURCES.map(s => <Option key={s} value={s}>{s}</Option>)}
+              </Select>
+            </Form.Item>
+          </Col>
+        </Row>
+      )}
+      {!forEdit && (
+        <Form.Item name="notes_text" label="Initial Notes">
+          <TextArea rows={3} placeholder="Add any notes about this lead..." />
+        </Form.Item>
+      )}
+    </>
+  );
+
+  // ── render ────────────────────────────────────────────────────────────────
+
   return (
     <div>
-      <div style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h1 style={{ fontSize: '28px', fontWeight: 600, margin: 0 }}>
-          👥 Leads Management
-        </h1>
+      {/* Header */}
+      <div style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <h1 style={{ fontSize: 26, fontWeight: 700, margin: 0 }}>Leads Management</h1>
         <Space>
-          <Button
-            icon={<ReloadOutlined />}
-            onClick={() => refetch()}
-          >
-            Refresh
-          </Button>
-          <Button
-            icon={<FilterOutlined />}
-            onClick={() => setFilterDrawerVisible(true)}
-          >
-            Filters
-          </Button>
-          <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            onClick={() => setDrawerVisible(true)}
-          >
-            Create Lead
+          <Input
+            placeholder="Search by name, phone, email, company..."
+            prefix={<SearchOutlined />}
+            value={searchText}
+            onChange={e => setSearchText(e.target.value)}
+            style={{ width: 280 }}
+            allowClear
+          />
+          <Button icon={<ReloadOutlined />} onClick={() => refetch()}>Refresh</Button>
+          <Button icon={<FilterOutlined />} onClick={() => setFilterDrawerOpen(true)}>Filters</Button>
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateDrawerOpen(true)}>
+            Add Lead
           </Button>
         </Space>
       </div>
 
       {/* Summary Cards */}
-      <Row gutter={[16, 16]} style={{ marginBottom: '24px' }}>
-        <Col span={6}>
-          <Card size="small">
-            <div style={{ fontSize: '14px', color: '#8c8c8c' }}>Total Leads</div>
-            <div style={{ fontSize: '24px', fontWeight: 600 }}>{leads?.length || 0}</div>
-          </Card>
-        </Col>
-        <Col span={6}>
-          <Card size="small">
-            <div style={{ fontSize: '14px', color: '#8c8c8c' }}>Hot Leads</div>
-            <div style={{ fontSize: '24px', fontWeight: 600, color: '#ff4d4f' }}>
-              {leads?.filter(l => l.ai_segment === 'Hot').length || 0}
-            </div>
-          </Card>
-        </Col>
-        <Col span={6}>
-          <Card size="small">
-            <div style={{ fontSize: '14px', color: '#8c8c8c' }}>Enrolled</div>
-            <div style={{ fontSize: '24px', fontWeight: 600, color: '#52c41a' }}>
-              {leads?.filter(l => l.status === 'Enrolled').length || 0}
-            </div>
-          </Card>
-        </Col>
-        <Col span={6}>
-          <Card size="small">
-            <div style={{ fontSize: '14px', color: '#8c8c8c' }}>Total Revenue</div>
-            <div style={{ fontSize: '24px', fontWeight: 600, color: '#faad14' }}>
-              ₹{((leads?.reduce((sum, l) => sum + l.actual_revenue, 0) || 0) / 100000).toFixed(2)}L
-            </div>
-          </Card>
-        </Col>
+      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+        {[
+          { label: 'Total Leads',     value: leads.length,    color: '#1890ff' },
+          { label: 'Hot Leads',       value: hotLeads,        color: '#ff4d4f' },
+          { label: 'Enrolled',        value: enrolled,        color: '#52c41a' },
+          { label: "Today's Follow Ups", value: todayFollowups, color: '#faad14' },
+          { label: 'Total Revenue',   value: `₹${(totalRevenue / 100000).toFixed(2)}L`, color: '#722ed1' },
+        ].map(card => (
+          <Col key={card.label} xs={24} sm={12} md={8} lg={6} xl={5}>
+            <Card size="small" hoverable>
+              <div style={{ fontSize: 13, color: '#8c8c8c' }}>{card.label}</div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: card.color }}>{card.value}</div>
+            </Card>
+          </Col>
+        ))}
       </Row>
 
-      {/* Leads Table */}
+      {/* Table */}
       <Table
-        dataSource={leads}
+        dataSource={displayed}
         columns={columns}
         loading={isLoading}
         rowKey="id"
-        scroll={{ x: 1800 }}
+        size="small"
+        scroll={{ x: 2400 }}
         pagination={{
-          pageSize: 20,
+          pageSize: 25,
           showSizeChanger: true,
-          showTotal: (total) => `Total ${total} leads`,
+          pageSizeOptions: ['25', '50', '100'],
+          showTotal: total => `${total} leads`,
         }}
       />
 
-      {/* Create Lead Drawer */}
+      {/* ── Create Lead Drawer ── */}
       <Drawer
-        title="Create New Lead"
-        width={600}
-        onClose={() => setDrawerVisible(false)}
-        open={drawerVisible}
+        title="Add New Lead"
+        width={720}
+        open={createDrawerOpen}
+        onClose={() => { setCreateDrawerOpen(false); createForm.resetFields(); }}
         bodyStyle={{ paddingBottom: 80 }}
       >
-        <Form
-          form={form}
-          layout="vertical"
-          onFinish={handleCreateLead}
-        >
-          <Form.Item
-            name="full_name"
-            label="Full Name"
-            rules={[{ required: true, message: 'Please enter full name' }]}
-          >
-            <Input placeholder="Dr. John Doe" />
-          </Form.Item>
-
-          <Form.Item
-            name="email"
-            label="Email"
-            rules={[{ type: 'email', message: 'Please enter valid email' }]}
-          >
-            <Input placeholder="john@example.com" />
-          </Form.Item>
-
-          <Form.Item
-            name="phone"
-            label="Phone"
-            rules={[{ required: true, message: 'Please enter phone number' }]}
-          >
-            <Input placeholder="+91-9876543210" />
-          </Form.Item>
-
-          <Form.Item
-            name="whatsapp"
-            label="WhatsApp"
-          >
-            <Input placeholder="+91-9876543210" />
-          </Form.Item>
-
-          <Form.Item
-            name="country"
-            label="Country"
-            rules={[{ required: true, message: 'Please select country' }]}
-          >
-            <Select placeholder="Select country">
-              <Option value="India">India</Option>
-              <Option value="UAE">UAE</Option>
-              <Option value="Saudi Arabia">Saudi Arabia</Option>
-              <Option value="Kuwait">Kuwait</Option>
-              <Option value="Oman">Oman</Option>
-              <Option value="Qatar">Qatar</Option>
-              <Option value="USA">USA</Option>
-              <Option value="UK">UK</Option>
-            </Select>
-          </Form.Item>
-
-          <Form.Item
-            name="source"
-            label="Source"
-            rules={[{ required: true, message: 'Please select source' }]}
-          >
-            <Select placeholder="Select source">
-              <Option value="Facebook">Facebook</Option>
-              <Option value="Instagram">Instagram</Option>
-              <Option value="Google Ads">Google Ads</Option>
-              <Option value="Website">Website</Option>
-              <Option value="Referral">Referral</Option>
-              <Option value="WhatsApp">WhatsApp</Option>
-            </Select>
-          </Form.Item>
-
-          <Form.Item
-            name="course_interested"
-            label="Course Interested"
-            rules={[{ required: true, message: 'Please select course' }]}
-          >
-            <Select placeholder="Select course">
-              {courses?.map(course => (
-                <Option key={course.id} value={course.course_name}>
-                  {course.course_name} - ₹{(course.price / 1000).toFixed(0)}K
-                </Option>
-              ))}
-            </Select>
-          </Form.Item>
-
-          <Form.Item
-            name="assigned_to"
-            label="Assign To"
-          >
-            <Select placeholder="Select counselor" allowClear>
-              {counselors?.map(counselor => (
-                <Option key={counselor.id} value={counselor.name}>
-                  {counselor.name}
-                </Option>
-              ))}
-            </Select>
-          </Form.Item>
-
-          <Form.Item>
-            <Space>
-              <Button type="primary" htmlType="submit" loading={createLeadMutation.isLoading}>
-                Create Lead
-              </Button>
-              <Button onClick={() => setDrawerVisible(false)}>
-                Cancel
-              </Button>
-            </Space>
-          </Form.Item>
+        <Form form={createForm} layout="vertical" onFinish={v => createMutation.mutate(v)}>
+          <LeadFormFields forEdit={false} />
+          <Space>
+            <Button type="primary" htmlType="submit" loading={createMutation.isLoading}>
+              Create Lead
+            </Button>
+            <Button onClick={() => { setCreateDrawerOpen(false); createForm.resetFields(); }}>
+              Cancel
+            </Button>
+          </Space>
         </Form>
       </Drawer>
 
-      {/* Filter Drawer */}
+      {/* ── Edit Lead Drawer ── */}
       <Drawer
-        title="Advanced Filters"
-        width={400}
-        onClose={() => setFilterDrawerVisible(false)}
-        open={filterDrawerVisible}
+        title={`Edit Lead — ${selectedLead?.lead_id || ''}`}
+        width={720}
+        open={editDrawerOpen}
+        onClose={() => setEditDrawerOpen(false)}
+        bodyStyle={{ paddingBottom: 80 }}
       >
-        <Space direction="vertical" style={{ width: '100%' }} size="large">
-          <div>
-            <div style={{ marginBottom: '8px', fontWeight: 500 }}>Status</div>
-            <Select
-              style={{ width: '100%' }}
-              placeholder="Select status"
-              allowClear
-              onChange={(value) => handleFilter('status', value)}
-              value={filters.status}
-            >
-              <Option value="Fresh">Fresh</Option>
-              <Option value="Follow Up">Follow Up</Option>
-              <Option value="Warm">Warm</Option>
-              <Option value="Hot">Hot</Option>
-              <Option value="Not Interested">Not Interested</Option>
-              <Option value="Junk">Junk</Option>
-              <Option value="Not Answering">Not Answering</Option>
-              <Option value="Enrolled">Enrolled</Option>
-            </Select>
-          </div>
+        <Form form={editForm} layout="vertical" onFinish={handleEdit}>
+          <LeadFormFields forEdit={true} />
+          <Space>
+            <Button type="primary" htmlType="submit" loading={updateMutation.isLoading}>
+              Save Changes
+            </Button>
+            <Button onClick={() => setEditDrawerOpen(false)}>Cancel</Button>
+          </Space>
+        </Form>
+      </Drawer>
 
-          <div>
-            <div style={{ marginBottom: '8px', fontWeight: 500 }}>Country</div>
-            <Select
-              style={{ width: '100%' }}
-              placeholder="Select country"
-              allowClear
-              onChange={(value) => handleFilter('country', value)}
-              value={filters.country}
-            >
-              {countries.map(country => (
-                <Option key={country} value={country}>{country}</Option>
-              ))}
-            </Select>
-          </div>
+      {/* ── Filter Drawer ── */}
+      <Drawer
+        title="Filter Leads"
+        width={380}
+        open={filterDrawerOpen}
+        onClose={() => setFilterDrawerOpen(false)}
+        extra={<Button size="small" onClick={clearFilters}>Clear All</Button>}
+      >
+        <Space direction="vertical" style={{ width: '100%' }} size="middle">
 
+          {/* Status */}
           <div>
-            <div style={{ marginBottom: '8px', fontWeight: 500 }}>Segment</div>
-            <Select
-              style={{ width: '100%' }}
-              placeholder="Select segment"
-              allowClear
-              onChange={(value) => handleFilter('segment', value)}
-              value={filters.segment}
-            >
-              <Option value="Hot">Hot</Option>
-              <Option value="Warm">Warm</Option>
-              <Option value="Cold">Cold</Option>
-              <Option value="Junk">Junk</Option>
-            </Select>
-          </div>
-
-          <div>
-            <div style={{ marginBottom: '8px', fontWeight: 500 }}>Assigned To</div>
-            <Select
-              style={{ width: '100%' }}
-              placeholder="Select counselor"
-              allowClear
-              onChange={(value) => handleFilter('assigned_to', value)}
-              value={filters.assigned_to}
-            >
-              {counselors?.map(counselor => (
-                <Option key={counselor.id} value={counselor.name}>
-                  {counselor.name}
+            <div style={{ fontWeight: 600, marginBottom: 6 }}>Status</div>
+            <Select style={{ width: '100%' }} placeholder="All Status" allowClear
+              value={filters.status} onChange={v => handleFilter('status', v)}>
+              {STATUSES.map(s => (
+                <Option key={s} value={s}>
+                  <Tag color={STATUS_COLORS_FULL[s]} style={{ marginRight: 6 }}>{s}</Tag>
                 </Option>
               ))}
             </Select>
           </div>
 
+          {/* Country */}
           <div>
-            <div style={{ marginBottom: '8px', fontWeight: 500 }}>Follow-up Date Range</div>
-            <RangePicker
-              style={{ width: '100%' }}
-              onChange={(dates) => {
-                if (dates) {
-                  handleFilter('follow_up_from', dates[0].toISOString());
-                  handleFilter('follow_up_to', dates[1].toISOString());
-                } else {
-                  handleFilter('follow_up_from', undefined);
-                  handleFilter('follow_up_to', undefined);
-                }
+            <div style={{ fontWeight: 600, marginBottom: 6 }}>Country</div>
+            <Select style={{ width: '100%' }} placeholder="All countries" allowClear showSearch
+              value={filters.country} onChange={v => handleFilter('country', v)}>
+              {COUNTRIES.map(c => <Option key={c} value={c}>{c}</Option>)}
+            </Select>
+          </div>
+
+          {/* Source */}
+          <div>
+            <div style={{ fontWeight: 600, marginBottom: 6 }}>Source</div>
+            <Select style={{ width: '100%' }} placeholder="All sources" allowClear
+              value={filters.source} onChange={v => handleFilter('source', v)}>
+              {SOURCES.map(s => <Option key={s} value={s}>{s}</Option>)}
+            </Select>
+          </div>
+
+          {/* Assigned To */}
+          <div>
+            <div style={{ fontWeight: 600, marginBottom: 6 }}>Assigned To</div>
+            <Select style={{ width: '100%' }} placeholder="All counselors" allowClear showSearch
+              value={filters.assigned_to} onChange={v => handleFilter('assigned_to', v)}>
+              {counselors.map(c => <Option key={c.id} value={c.name}>{c.name}</Option>)}
+            </Select>
+          </div>
+
+          {/* Follow-up Range */}
+          <div>
+            <div style={{ fontWeight: 600, marginBottom: 6 }}>Follow-up Date</div>
+            <RangePicker style={{ width: '100%' }} onChange={dates => {
+              if (dates) {
+                handleFilter('follow_up_from', dates[0].toISOString());
+                handleFilter('follow_up_to', dates[1].toISOString());
+              } else {
+                handleFilter('follow_up_from', undefined);
+                handleFilter('follow_up_to', undefined);
+              }
+            }} />
+          </div>
+
+          {/* Created Range */}
+          <div>
+            <div style={{ fontWeight: 600, marginBottom: 6 }}>Created Date</div>
+            <RangePicker style={{ width: '100%' }} onChange={dates => {
+              if (dates) {
+                handleFilter('created_from', dates[0].toISOString());
+                handleFilter('created_to', dates[1].toISOString());
+              } else {
+                handleFilter('created_from', undefined);
+                handleFilter('created_to', undefined);
+              }
+            }} />
+          </div>
+
+          {/* Updated At — on / after / before */}
+          <div>
+            <div style={{ fontWeight: 600, marginBottom: 6 }}>Updated At</div>
+            <Select
+              style={{ width: '100%', marginBottom: 8 }}
+              placeholder="Filter type"
+              allowClear
+              value={filters._updatedMode}
+              onChange={mode => {
+                setFilters(prev => ({
+                  ...prev,
+                  _updatedMode: mode,
+                  updated_on: undefined,
+                  updated_after: undefined,
+                  updated_before: undefined,
+                }));
               }}
-            />
+            >
+              <Option value="on">On (exact date)</Option>
+              <Option value="after">After date</Option>
+              <Option value="before">Before date</Option>
+            </Select>
+            {filters._updatedMode && (
+              <DatePicker
+                style={{ width: '100%' }}
+                onChange={date => {
+                  if (!date) {
+                    setFilters(prev => ({
+                      ...prev,
+                      updated_on: undefined,
+                      updated_after: undefined,
+                      updated_before: undefined,
+                    }));
+                    return;
+                  }
+                  if (filters._updatedMode === 'on') {
+                    handleFilter('updated_on', date.format('YYYY-MM-DD'));
+                    handleFilter('updated_after', undefined);
+                    handleFilter('updated_before', undefined);
+                  } else if (filters._updatedMode === 'after') {
+                    handleFilter('updated_after', date.startOf('day').toISOString());
+                    handleFilter('updated_on', undefined);
+                    handleFilter('updated_before', undefined);
+                  } else {
+                    handleFilter('updated_before', date.endOf('day').toISOString());
+                    handleFilter('updated_on', undefined);
+                    handleFilter('updated_after', undefined);
+                  }
+                }}
+              />
+            )}
           </div>
 
-          <div>
-            <div style={{ marginBottom: '8px', fontWeight: 500 }}>Created Date Range</div>
-            <RangePicker
-              style={{ width: '100%' }}
-              onChange={(dates) => {
-                if (dates) {
-                  handleFilter('created_from', dates[0].toISOString());
-                  handleFilter('created_to', dates[1].toISOString());
-                } else {
-                  handleFilter('created_from', undefined);
-                  handleFilter('created_to', undefined);
-                }
-              }}
-            />
-          </div>
-
-          <div>
-            <div style={{ marginBottom: '8px', fontWeight: 500 }}>Search</div>
-            <Input
-              placeholder="Search by name, phone, email..."
-              onChange={(e) => handleFilter('search', e.target.value)}
-              value={filters.search}
-              prefix={<SearchOutlined />}
-            />
-          </div>
-
-          <Button onClick={clearFilters} block>
-            Clear All Filters
-          </Button>
+          <Button block type="default" onClick={clearFilters}>Clear All Filters</Button>
         </Space>
       </Drawer>
-      
-      {/* Chat Interface for WhatsApp and Email */}
+
+      {/* ── Notes Modal ── */}
+      <Modal
+        title={`Notes — ${selectedLead?.full_name || ''}`}
+        open={notesModalOpen}
+        onCancel={() => { setNotesModalOpen(false); setSelectedLead(null); }}
+        footer={null}
+        width={560}
+      >
+        {/* Existing notes */}
+        <div style={{ maxHeight: 300, overflowY: 'auto', marginBottom: 16 }}>
+          {(selectedLead?.notes || []).length === 0 ? (
+            <Text type="secondary">No notes yet.</Text>
+          ) : (
+            [...(selectedLead?.notes || [])].reverse().map(note => (
+              <Card key={note.id} size="small" style={{ marginBottom: 8 }}>
+                <div style={{ fontSize: 13 }}>{note.content}</div>
+                <div style={{ fontSize: 11, color: '#8c8c8c', marginTop: 4 }}>
+                  {note.created_by} · {dayjs(note.created_at).format('DD MMM YYYY HH:mm')} · {note.channel}
+                </div>
+              </Card>
+            ))
+          )}
+        </div>
+        {/* Add note */}
+        <Form layout="vertical" onFinish={handleAddNote}>
+          <Form.Item name="content" label="Add Note" rules={[{ required: true, message: 'Enter a note' }]}>
+            <TextArea rows={3} placeholder="Write your note here..." />
+          </Form.Item>
+          <Button type="primary" htmlType="submit" loading={addNoteMutation.isLoading}>
+            Add Note
+          </Button>
+        </Form>
+      </Modal>
+
+      {/* Chat Interface */}
       <ChatInterface
         visible={chatVisible}
-        onClose={() => {
-          setChatVisible(false);
-          setSelectedLead(null);
-        }}
+        onClose={() => { setChatVisible(false); setSelectedLead(null); }}
         lead={selectedLead}
         type={communicationType}
       />
-      
+
       {/* Call Interface */}
       <CallInterface
         visible={callVisible}
-        onClose={() => {
-          setCallVisible(false);
-          setSelectedLead(null);
-        }}
+        onClose={() => { setCallVisible(false); setSelectedLead(null); }}
         lead={selectedLead}
       />
     </div>

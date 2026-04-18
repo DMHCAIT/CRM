@@ -31,6 +31,21 @@ class Token(BaseModel):
 class TokenData(BaseModel):
     email: Optional[str] = None
     role: Optional[str] = None
+    hospital_id: Optional[int] = None
+
+
+ROLE_LEVELS = {
+    "Counselor": 1,
+    "Team Leader": 2,
+    "Manager": 3,
+    "Hospital Admin": 4,
+    "Super Admin": 5,
+}
+
+
+def has_minimum_role(user_role: str, minimum_role: str) -> bool:
+    """Return True when user's role is at or above the required role level."""
+    return ROLE_LEVELS.get(user_role, 0) >= ROLE_LEVELS.get(minimum_role, 0)
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -70,6 +85,7 @@ def decode_access_token(token: str) -> TokenData:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         email: str = payload.get("sub")
         role: str = payload.get("role")
+        hospital_id: Optional[int] = payload.get("hospital_id")
         
         if email is None:
             raise HTTPException(
@@ -78,7 +94,7 @@ def decode_access_token(token: str) -> TokenData:
                 headers={"WWW-Authenticate": "Bearer"},
             )
         
-        return TokenData(email=email, role=role)
+        return TokenData(email=email, role=role, hospital_id=hospital_id)
     
     except JWTError:
         raise HTTPException(
@@ -96,7 +112,15 @@ def authenticate_user(db: Session, email: str, password: str):
     
     if not user:
         return False
-    
+
+    # Backward compatibility: allow legacy plaintext passwords and auto-upgrade
+    # to bcrypt hash on successful login.
+    if user.password == password:
+        user.password = get_password_hash(password)
+        db.commit()
+        db.refresh(user)
+        return user
+
     if not verify_password(password, user.password):
         return False
     
@@ -106,7 +130,7 @@ def authenticate_user(db: Session, email: str, password: str):
 def get_db_dependency():
     """Get database session - imported here to avoid circular dependency"""
     from main import get_db
-    return get_db
+    yield from get_db()
 
 
 async def get_current_user(
@@ -146,22 +170,29 @@ def require_role(allowed_roles: list):
 # Role-based access helpers
 async def get_current_counselor(current_user = Depends(get_current_user)):
     """Require Counselor role or higher"""
-    if current_user.role not in ["Counselor", "Team Leader", "Manager", "Super Admin"]:
+    if not has_minimum_role(current_user.role, "Counselor"):
         raise HTTPException(status_code=403, detail="Counselor access required")
     return current_user
 
 
 async def get_current_team_leader(current_user = Depends(get_current_user)):
     """Require Team Leader role or higher"""
-    if current_user.role not in ["Team Leader", "Manager", "Super Admin"]:
+    if not has_minimum_role(current_user.role, "Team Leader"):
         raise HTTPException(status_code=403, detail="Team Leader access required")
     return current_user
 
 
 async def get_current_manager(current_user = Depends(get_current_user)):
     """Require Manager role or higher"""
-    if current_user.role not in ["Manager", "Super Admin"]:
+    if not has_minimum_role(current_user.role, "Manager"):
         raise HTTPException(status_code=403, detail="Manager access required")
+    return current_user
+
+
+async def get_current_hospital_admin(current_user = Depends(get_current_user)):
+    """Require Hospital Admin role or higher"""
+    if not has_minimum_role(current_user.role, "Hospital Admin"):
+        raise HTTPException(status_code=403, detail="Hospital Admin access required")
     return current_user
 
 

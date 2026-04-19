@@ -63,8 +63,19 @@ from cache import (
 
 # Import query optimizer
 
-# Import AI Assistant (GPT-4)
-from ai_assistant import ai_assistant
+# Import AI Assistant - Dynamically choose between Claude and GPT-4
+USE_CLAUDE = os.getenv("USE_CLAUDE", "false").lower() == "true"
+if USE_CLAUDE:
+    try:
+        from ai_assistant_claude import ai_assistant
+        logger.info("🤖 Using Claude (Anthropic) for AI features")
+    except ImportError:
+        from ai_assistant import ai_assistant
+        logger.warning("⚠️ Claude module not found, falling back to OpenAI")
+else:
+    from ai_assistant import ai_assistant
+    logger.info("🤖 Using OpenAI GPT-4 for AI features")
+
 from query_optimizer import create_database_indexes, analyze_slow_queries
 
 # Import new automation modules - TEMPORARILY DISABLED until database models are added

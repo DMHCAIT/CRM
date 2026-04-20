@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import { Dropdown, Menu } from 'antd';
+import { LogoutOutlined, UserOutlined } from '@ant-design/icons';
+import { useAuth } from '../../context/AuthContext';
 import {
   LayoutDashboard,
   Users,
@@ -23,6 +26,32 @@ const ProfessionalLayout = ({ children }) => {
   const [collapsed, setCollapsed] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
+  const { user, logout } = useAuth();
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
+
+  const userMenuItems = [
+    {
+      key: 'profile',
+      icon: <UserOutlined />,
+      label: 'Profile',
+    },
+    {
+      type: 'divider',
+    },
+    {
+      key: 'logout',
+      icon: <LogoutOutlined />,
+      label: 'Logout',
+      danger: true,
+      onClick: handleLogout,
+    },
+  ];
+
+  const userMenu = <Menu items={userMenuItems} />;
 
   // Show all menu items without any authentication/authorization
   const menuItems = [
@@ -198,37 +227,40 @@ const ProfessionalLayout = ({ children }) => {
             {/* Smart Notifications */}
             {isFeatureEnabled('SMART_NOTIFICATIONS') && <SmartNotifications />}
 
-            {/* User */}
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 12,
-              paddingLeft: 16,
-              borderLeft: '1px solid var(--border)',
-            }}>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--text-primary)' }}>
-                  Admin User
-                </div>
-                <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>
-                  admin@medcrm.com
-                </div>
-              </div>
+            {/* User Menu */}
+            <Dropdown overlay={userMenu} trigger={['click']} placement="bottomRight">
               <div style={{
-                width: 40,
-                height: 40,
-                borderRadius: 8,
-                background: 'linear-gradient(135deg, var(--accent), #8b5cf6)',
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'center',
-                color: '#fff',
-                fontWeight: 600,
-                fontSize: 'var(--text-sm)',
+                gap: 12,
+                paddingLeft: 16,
+                borderLeft: '1px solid var(--border)',
+                cursor: 'pointer',
               }}>
-                AU
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--text-primary)' }}>
+                    {user?.full_name || 'User'}
+                  </div>
+                  <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>
+                    {user?.role || 'Role'}
+                  </div>
+                </div>
+                <div style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: 8,
+                  background: 'linear-gradient(135deg, var(--accent), #8b5cf6)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#fff',
+                  fontWeight: 600,
+                  fontSize: 'var(--text-sm)',
+                }}>
+                  {user?.full_name?.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) || 'U'}
+                </div>
               </div>
-            </div>
+            </Dropdown>
           </div>
         </header>
 

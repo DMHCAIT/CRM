@@ -104,11 +104,15 @@ def decode_access_token(token: str) -> TokenData:
         )
 
 
-def authenticate_user(db: Session, email: str, password: str):
-    """Authenticate a user by email and password"""
+def authenticate_user(db: Session, username_or_email: str, password: str):
+    """Authenticate a user by username/email and password"""
     from main import DBUser  # Import here to avoid circular dependency
     
-    user = db.query(DBUser).filter(DBUser.email == email).first()
+    # Try to find user by email OR username (if username field exists)
+    user = db.query(DBUser).filter(
+        (DBUser.email == username_or_email) | 
+        (DBUser.full_name == username_or_email)
+    ).first()
     
     if not user:
         return False

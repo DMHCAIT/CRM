@@ -1300,11 +1300,11 @@ def _send_whatsapp_via_cloud_api(connection: DBUserWhatsAppConnection, to_number
 
 @app.post("/api/auth/login", response_model=Token)
 async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    """Authenticate user and return access token."""
+    """Authenticate user and return access token. Accepts username or email."""
     user = authenticate_user(db, form_data.username, form_data.password)
 
     if not user:
-        raise HTTPException(status_code=401, detail="Invalid email or password")
+        raise HTTPException(status_code=401, detail="Invalid username/email or password")
     if not user.is_active:
         raise HTTPException(status_code=403, detail="User account is inactive")
 

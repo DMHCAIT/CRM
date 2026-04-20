@@ -21,26 +21,30 @@ def get_database_url():
     Get the database URL.
     
     Priority:
-    1. DATABASE_URL environment variable (direct PostgreSQL connection)
-    2. SQLite fallback for local development
-    
-    Note: When SUPABASE_URL and SUPABASE_KEY are set, the application will use
-    Supabase REST API for data operations via supabase_client.py.
-    SQLite/PostgreSQL is only used for SQLAlchemy model initialization.
+    1. DATABASE_URL environment variable (direct PostgreSQL connection string)
+    2. Auto-build from SUPABASE_URL + SUPABASE_DB_PASSWORD
+    3. SQLite fallback for local development only
     """
     database_url = os.getenv("DATABASE_URL")
     
     if database_url:
+        # Render provides postgres:// but SQLAlchemy needs postgresql://
+        if database_url.startswith("postgres://"):
+            database_url = database_url.replace("postgres://", "postgresql://", 1)
+        print(f"✅ Using DATABASE_URL (PostgreSQL)")
         return database_url
     
-    # Check if Supabase is configured
-    if SUPABASE_URL and SUPABASE_KEY:
-        # Use SQLite for SQLAlchemy models, actual operations via Supabase REST API
-        print("ℹ️  Using Supabase REST API for data operations")
-        return "sqlite:///./crm_database.db"
+    # Auto-build from Supabase URL + DB password
+    supabase_db_password = os.getenv("SUPABASE_DB_PASSWORD")
+    if SUPABASE_URL and supabase_db_password:
+        # Extract project ref from https://goeybffajdqcwztazfmk.supabase.co
+        project_ref = SUPABASE_URL.replace("https://", "").replace(".supabase.co", "")
+        db_url = f"postgresql://postgres.{project_ref}:{supabase_db_password}@aws-0-ap-south-1.pooler.supabase.com:6543/postgres"
+        print(f"✅ Using Supabase PostgreSQL (auto-built from SUPABASE_URL)")
+        return db_url
     
     # Fallback to SQLite for local development
-    print("⚠️  Using SQLite for local development")
+    print("⚠️  No DATABASE_URL or SUPABASE_DB_PASSWORD set - using SQLite (ephemeral, data lost on restart)")
     return "sqlite:///./crm_database.db"
 
 SQLALCHEMY_DATABASE_URL = get_database_url()

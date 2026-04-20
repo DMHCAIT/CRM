@@ -52,7 +52,7 @@ const WorkflowSettings = () => {
     try {
       const response = await fetch(`${process.env.REACT_APP_API_URL}/api/workflows`, {
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${localStorage.getItem('access_token')}`
         }
       });
       const data = await response.json();
@@ -77,7 +77,7 @@ const WorkflowSettings = () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${localStorage.getItem('access_token')}`
         },
         body: JSON.stringify(workflow)
       });
@@ -116,7 +116,7 @@ const WorkflowSettings = () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${localStorage.getItem('access_token')}`
         },
         body: JSON.stringify(updated)
       });

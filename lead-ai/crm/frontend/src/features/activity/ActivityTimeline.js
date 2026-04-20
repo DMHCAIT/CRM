@@ -30,7 +30,7 @@ const ActivityTimeline = ({ leadId }) => {
       const params = filter !== 'all' ? `?type=${filter}` : '';
       const response = await fetch(`${API_BASE_URL}/api/leads/${leadId}/activities${params}`, {
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
         },
       });
       if (!response.ok) throw new Error('Failed to fetch activities');
@@ -45,7 +45,7 @@ const ActivityTimeline = ({ leadId }) => {
     queryFn: async () => {
       const response = await fetch(`${API_BASE_URL}/api/leads/${leadId}/ai-summary`, {
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
         },
       });
       if (!response.ok) throw new Error('Failed to fetch AI summary');

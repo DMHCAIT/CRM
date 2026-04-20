@@ -24,7 +24,7 @@ const AdminDashboard = () => {
     queryFn: async () => {
       const response = await fetch(`${API_BASE_URL}/api/admin/stats`, {
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
         },
       });
       if (!response.ok) throw new Error('Failed to fetch stats');
@@ -38,7 +38,7 @@ const AdminDashboard = () => {
     queryFn: async () => {
       const response = await fetch(`${API_BASE_URL}/api/admin/team-performance`, {
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
         },
       });
       if (!response.ok) throw new Error('Failed to fetch team performance');
@@ -52,7 +52,7 @@ const AdminDashboard = () => {
     queryFn: async () => {
       const response = await fetch(`${API_BASE_URL}/api/admin/funnel-analysis`, {
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
         },
       });
       if (!response.ok) throw new Error('Failed to fetch funnel data');
@@ -66,7 +66,7 @@ const AdminDashboard = () => {
     queryFn: async () => {
       const response = await fetch(`${API_BASE_URL}/api/admin/revenue-trend?days=30`, {
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
         },
       });
       if (!response.ok) throw new Error('Failed to fetch revenue trend');

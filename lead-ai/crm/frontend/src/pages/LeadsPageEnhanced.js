@@ -233,7 +233,7 @@ const LeadsPageEnhanced = () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${localStorage.getItem('access_token')}`
         },
         body: JSON.stringify(selectedRows.map(r => r.lead_id))
       });
@@ -261,7 +261,7 @@ const LeadsPageEnhanced = () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${localStorage.getItem('access_token')}`
         },
         body: JSON.stringify(selectedRows.map(r => r.lead_id))
       });
@@ -306,7 +306,7 @@ const LeadsPageEnhanced = () => {
           const promises = selectedRows.map(row => 
             fetch(`${process.env.REACT_APP_API_URL}/api/leads/${row.lead_id}`, {
               method: 'DELETE',
-              headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+              headers: { 'Authorization': `Bearer ${localStorage.getItem('access_token')}` }
             })
           );
           
@@ -328,7 +328,7 @@ const LeadsPageEnhanced = () => {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
+            'Authorization': `Bearer ${localStorage.getItem('access_token')}`
           },
           body: JSON.stringify({
             subject: values.subject,
@@ -354,7 +354,7 @@ const LeadsPageEnhanced = () => {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
+            'Authorization': `Bearer ${localStorage.getItem('access_token')}`
           },
           body: JSON.stringify({
             message: values.message

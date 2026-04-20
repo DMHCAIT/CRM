@@ -33,7 +33,7 @@ const SmartNotifications = () => {
       
       const response = await fetch(`${API_BASE_URL}/api/notifications?${params}`, {
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
         },
       });
       if (!response.ok) throw new Error('Failed to fetch notifications');
@@ -48,7 +48,7 @@ const SmartNotifications = () => {
     if (!isFeatureEnabled('WEBSOCKET_NOTIFICATIONS')) return;
 
     const wsUrl = API_BASE_URL.replace('https://', 'wss://').replace('http://', 'ws://');
-    const ws = new WebSocket(`${wsUrl}/ws/notifications?token=${localStorage.getItem('token')}`);
+    const ws = new WebSocket(`${wsUrl}/ws/notifications?token=${localStorage.getItem('access_token')}`);
     
     ws.onmessage = (event) => {
       const notification = JSON.parse(event.data);
@@ -72,7 +72,7 @@ const SmartNotifications = () => {
       const response = await fetch(`${API_BASE_URL}/api/notifications/${notificationId}/read`, {
         method: 'PATCH',
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
         },
       });
       if (!response.ok) throw new Error('Failed to mark as read');
@@ -90,7 +90,7 @@ const SmartNotifications = () => {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
         },
         body: JSON.stringify({ hours }),
       });
@@ -108,7 +108,7 @@ const SmartNotifications = () => {
       const response = await fetch(`${API_BASE_URL}/api/notifications/read-all`, {
         method: 'PATCH',
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
         },
       });
       if (!response.ok) throw new Error('Failed to mark all as read');

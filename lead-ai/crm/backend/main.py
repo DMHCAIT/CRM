@@ -272,14 +272,31 @@ app.add_middleware(ErrorHandlingMiddleware)
 app.add_middleware(PerformanceMonitoringMiddleware)
 app.add_middleware(LoggingMiddleware)
 
-# CORS middleware
-ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
+# CORS middleware - Allow frontend origins
+# For production, set ALLOWED_ORIGINS env var with comma-separated URLs
+# For Vercel, use specific deployment URL or set CORS_ALLOW_ALL=true for all origins
+CORS_ALLOW_ALL = os.getenv("CORS_ALLOW_ALL", "false").lower() == "true"
+
+if CORS_ALLOW_ALL:
+    # Allow all origins (useful for development or if using Vercel preview deployments)
+    ALLOWED_ORIGINS = ["*"]
+    ALLOW_CREDENTIALS = False  # Must be False when allow_origins is ["*"]
+    logger.warning("⚠️  CORS: Allowing ALL origins (credentials disabled)")
+else:
+    # Specific origins only
+    DEFAULT_ORIGINS = "http://localhost:3000,http://localhost:3001,https://crm-h4fqiseqh-dmhca.vercel.app"
+    ALLOWED_ORIGINS_STR = os.getenv("ALLOWED_ORIGINS", DEFAULT_ORIGINS)
+    ALLOWED_ORIGINS = [origin.strip() for origin in ALLOWED_ORIGINS_STR.split(",") if origin.strip()]
+    ALLOW_CREDENTIALS = True
+    logger.info(f"🌐 CORS enabled for specific origins: {ALLOWED_ORIGINS}")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
-    allow_credentials=True,
+    allow_credentials=ALLOW_CREDENTIALS,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 logger.info("🚀 FastAPI application initialized with logging and error handling")

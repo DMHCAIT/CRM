@@ -9,6 +9,20 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- ============================================================================
+-- CLEAN UP EXISTING TABLES (if needed)
+-- ============================================================================
+-- Uncomment these lines if you want to start fresh and delete all existing data:
+
+-- DROP TABLE IF EXISTS communication_history CASCADE;
+-- DROP TABLE IF EXISTS activities CASCADE;
+-- DROP TABLE IF EXISTS notes CASCADE;
+-- DROP TABLE IF EXISTS leads CASCADE;
+-- DROP TABLE IF EXISTS counselors CASCADE;
+-- DROP TABLE IF EXISTS courses CASCADE;
+-- DROP TABLE IF EXISTS users CASCADE;
+-- DROP TABLE IF EXISTS hospitals CASCADE;
+
+-- ============================================================================
 -- CORE TABLES
 -- ============================================================================
 
@@ -207,28 +221,49 @@ CREATE TRIGGER update_notes_updated_at BEFORE UPDATE ON notes
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- ============================================================================
--- ROW LEVEL SECURITY (RLS) - Optional but Recommended
+-- ALTER TABLES - Add missing columns if tables already exist
 -- ============================================================================
 
--- Enable RLS on sensitive tables
-ALTER TABLE users ENABLE ROW LEVEL SECURITY;
-ALTER TABLE leads ENABLE ROW LEVEL SECURITY;
-ALTER TABLE communication_history ENABLE ROW LEVEL SECURITY;
+-- Add missing columns to courses table if it exists
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                   WHERE table_name='courses' AND column_name='country') THEN
+        ALTER TABLE courses ADD COLUMN country VARCHAR(100);
+    END IF;
+END $$;
 
--- Policy: Allow authenticated users to read all users
-CREATE POLICY "Allow authenticated read access" ON users
-    FOR SELECT
-    USING (auth.role() = 'authenticated');
+-- Add missing columns to leads table if needed
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                   WHERE table_name='leads' AND column_name='last_contacted') THEN
+        ALTER TABLE leads ADD COLUMN last_contacted TIMESTAMP;
+    END IF;
+END $$;
 
--- Policy: Allow authenticated users to read/write their own leads
-CREATE POLICY "Allow authenticated access to leads" ON leads
-    FOR ALL
-    USING (auth.role() = 'authenticated');
+-- ============================================================================
+-- ROW LEVEL SECURITY (RLS) - DISABLED FOR SIMPLICITY
+-- ============================================================================
+-- Note: RLS is commented out for easier initial setup
+-- Uncomment and customize these policies based on your security requirements
 
--- Policy: Allow authenticated access to communication history
-CREATE POLICY "Allow authenticated access to communication" ON communication_history
-    FOR ALL
-    USING (auth.role() = 'authenticated');
+-- ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+-- ALTER TABLE leads ENABLE ROW LEVEL SECURITY;
+-- ALTER TABLE communication_history ENABLE ROW LEVEL SECURITY;
+
+-- Example policies (customize as needed):
+-- CREATE POLICY "Allow authenticated read access" ON users
+--     FOR SELECT
+--     USING (auth.role() = 'authenticated');
+
+-- CREATE POLICY "Allow authenticated access to leads" ON leads
+--     FOR ALL
+--     USING (auth.role() = 'authenticated');
+
+-- CREATE POLICY "Allow authenticated access to communication" ON communication_history
+--     FOR ALL
+--     USING (auth.role() = 'authenticated');
 
 -- ============================================================================
 -- SEED DATA (Sample Courses & Hospitals)

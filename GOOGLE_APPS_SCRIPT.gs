@@ -9,105 +9,140 @@
 // ============================================================================
 
 // Your CRM backend URL (no trailing slash)
-const API_URL = 'https://your-backend.onrender.com'; // Change this!
+const API_URL = 'https://crm-backend-kd86.onrender.com';
 // For local testing: 'http://your-ngrok-url' or 'http://localhost:8000'
 
 // Your authentication token (get from login)
 // SECURITY: Use Script Properties instead (see setupAuth function)
-const AUTH_TOKEN = 'your-jwt-token-here'; // Change this!
+const AUTH_TOKEN = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhZG1pbkBkbWhjYS5pbiIsInJvbGUiOiJTdXBlciBBZG1pbiIsImhvc3BpdGFsX2lkIjpudWxsLCJleHAiOjE3NzcyODUxMjR9.jHtzR1j0qM3vrrXPYhTji6XLM5zkJfa9cPoAXB5rvVQ';
 
 // Sheet configuration
-const SHEET_NAME = 'Sheet1'; // Name of your sheet with leads
+// Set to null to sync ALL sheets, or specify a name like 'Pediatric' to sync just one
+const SHEET_NAME = null; // null = ALL sheets
 const HEADER_ROW = 1; // Row number where headers are
 const STATUS_COLUMN = 'Sync_Status'; // Column to track sync status
+
+// Sheets to SKIP (system sheets, summaries, etc.)
+const SKIP_SHEETS = ['Summary', 'Config', 'Template', 'Instructions'];
 
 // ============================================================================
 // MAIN SYNC FUNCTION - Run this automatically via trigger
 // ============================================================================
 
 function syncNewLeads() {
-  try {
-    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  let sheets;
+
+  if (SHEET_NAME) {
+    // Sync specific sheet only
+    const sheet = spreadsheet.getSheetByName(SHEET_NAME);
     if (!sheet) {
       Logger.log('ERROR: Sheet not found: ' + SHEET_NAME);
       return;
     }
+    sheets = [sheet];
+  } else {
+    // Sync ALL sheets (skip system sheets)
+    sheets = spreadsheet.getSheets().filter(s => !SKIP_SHEETS.includes(s.getName()));
+  }
+
+  Logger.log(`=== Syncing ${sheets.length} sheet(s) ===`);
+
+  let totalSynced = 0;
+  let totalErrors = 0;
+
+  sheets.forEach(sheet => {
+    Logger.log(`\n--- Processing sheet: ${sheet.getName()} ---`);
+    const result = syncSheet(sheet);
+    totalSynced += result.synced;
+    totalErrors += result.errors;
+  });
+
+  Logger.log(`\n============================`);
+  Logger.log(`✅ TOTAL Synced: ${totalSynced}`);
+  Logger.log(`❌ TOTAL Errors: ${totalErrors}`);
+  Logger.log(`============================`);
+}
+
+function syncSheet(sheet) {
+  let syncedCount = 0;
+  let errorCount = 0;
+
+  try {
+    const lastRow = sheet.getLastRow();
+    const lastCol = sheet.getLastColumn();
+
+    if (lastRow <= HEADER_ROW || lastCol < 1) {
+      Logger.log(`  Skipping empty sheet: ${sheet.getName()}`);
+      return { synced: 0, errors: 0 };
+    }
 
     // Get headers
-    const headers = sheet.getRange(HEADER_ROW, 1, 1, sheet.getLastColumn()).getValues()[0];
+    const headers = sheet.getRange(HEADER_ROW, 1, 1, lastCol).getValues()[0];
     const columnMap = buildColumnMap(headers);
-    
+
+    // Check sheet has required columns
+    if (!columnMap['full_name'] && !columnMap['phone_number']) {
+      Logger.log(`  Skipping sheet (no lead columns): ${sheet.getName()}`);
+      return { synced: 0, errors: 0 };
+    }
+
     // Ensure status column exists
     const statusColIndex = ensureStatusColumn(sheet, headers);
-    
+
     // Get all data rows
-    const lastRow = sheet.getLastRow();
-    if (lastRow <= HEADER_ROW) {
-      Logger.log('No data rows to process');
-      return;
-    }
-    
-    const dataRange = sheet.getRange(HEADER_ROW + 1, 1, lastRow - HEADER_ROW, sheet.getLastColumn());
+    const dataRange = sheet.getRange(HEADER_ROW + 1, 1, lastRow - HEADER_ROW, lastCol);
     const rows = dataRange.getValues();
-    
-    let syncedCount = 0;
-    let errorCount = 0;
-    
-    // Process each row
+
     rows.forEach((row, index) => {
       const rowNumber = HEADER_ROW + 1 + index;
+
+      // Skip empty rows
+      if (row.every(cell => cell === '' || cell === null)) return;
+
       const statusCell = sheet.getRange(rowNumber, statusColIndex);
       const currentStatus = statusCell.getValue();
-      
+
       // Skip already synced rows
       if (currentStatus === 'Synced' || currentStatus.toString().startsWith('Error:')) {
         return;
       }
-      
+
       try {
-        // Map row data to CRM format
-        const leadData = mapRowToLead(row, columnMap);
-        
-        // Validate required fields
+        const leadData = mapRowToLead(row, columnMap, sheet.getName());
         const validation = validateLead(leadData);
-        if (!validation.valid) {
-          throw new Error(validation.error);
-        }
-        
-        // Send to CRM
+        if (!validation.valid) throw new Error(validation.error);
+
         const response = createLeadInCRM(leadData);
-        
+
         if (response.success) {
           statusCell.setValue('Synced');
-          statusCell.setBackground('#d4edda'); // Green
+          statusCell.setBackground('#d4edda');
           statusCell.setFontColor('#155724');
           syncedCount++;
-          Logger.log(`✅ Row ${rowNumber}: Synced successfully`);
+          Logger.log(`  ✅ Row ${rowNumber}: ${leadData.full_name} synced`);
         } else {
           throw new Error(response.error || 'Unknown error');
         }
-        
+
       } catch (error) {
         statusCell.setValue('Error: ' + error.message);
-        statusCell.setBackground('#f8d7da'); // Red
+        statusCell.setBackground('#f8d7da');
         statusCell.setFontColor('#721c24');
         errorCount++;
-        Logger.log(`❌ Row ${rowNumber}: ${error.message}`);
+        Logger.log(`  ❌ Row ${rowNumber}: ${error.message}`);
       }
-      
-      // Avoid rate limiting - pause between rows
-      Utilities.sleep(500);
+
+      Utilities.sleep(300);
     });
-    
-    Logger.log(`\n=== Sync Complete ===`);
-    Logger.log(`✅ Synced: ${syncedCount}`);
-    Logger.log(`❌ Errors: ${errorCount}`);
-    Logger.log(`Total processed: ${syncedCount + errorCount}`);
-    
+
+    Logger.log(`  Sheet "${sheet.getName()}": ✅${syncedCount} synced, ❌${errorCount} errors`);
+
   } catch (error) {
-    Logger.log('FATAL ERROR: ' + error.message);
-    Logger.log(error.stack);
+    Logger.log(`  FATAL ERROR in sheet "${sheet.getName()}": ${error.message}`);
   }
+
+  return { synced: syncedCount, errors: errorCount };
 }
 
 // ============================================================================
@@ -136,32 +171,33 @@ function ensureStatusColumn(sheet, headers) {
   return statusColIndex + 1; // Convert to 1-based index
 }
 
-function mapRowToLead(row, columnMap) {
+function mapRowToLead(row, columnMap, sheetName) {
   const getValue = (columnName) => {
     const index = columnMap[columnName.toLowerCase()];
     return index !== undefined ? row[index] : null;
   };
   
   // Map Google Sheet columns to CRM fields
+  // Use sheet name as fallback course (e.g. 'Pediatric', 'Pulmonology')
   const lead = {
     full_name: getValue('full_name') || '',
     phone: getValue('phone_number') || '',
     email: getValue('email') || '',
     country: getValue('country') || 'India',
     qualification: getValue('your_highest_qualification') || '',
-    course_interested: getValue('in_which_program_are_you_interested_?') || getValue('course') || '',
+    course_interested: getValue('in_which_program_are_you_interested_?') || getValue('course') || sheetName || '',
     source: getValue('platform') || 'Google Sheet Import',
-    whatsapp: getValue('phone_number') || '', // Use same as phone
+    whatsapp: getValue('phone_number') || '',
     branch: null,
     company: null,
-    assigned_to: null, // Will be auto-assigned to Super Admin
-    notes_text: buildNotesFromMetadata(row, columnMap)
+    assigned_to: null,
+    notes_text: buildNotesFromMetadata(row, columnMap, sheetName)
   };
   
   return lead;
 }
 
-function buildNotesFromMetadata(row, columnMap) {
+function buildNotesFromMetadata(row, columnMap, sheetName) {
   const getValue = (columnName) => {
     const index = columnMap[columnName.toLowerCase()];
     return index !== undefined ? row[index] : null;
@@ -179,6 +215,7 @@ function buildNotesFromMetadata(row, columnMap) {
   const isOrganic = getValue('is_organic');
   
   if (platform) metadata.push(`Platform: ${platform}`);
+  if (sheetName) metadata.push(`Sheet/Campaign: ${sheetName}`);
   if (campaignName) metadata.push(`Campaign: ${campaignName}`);
   if (adName) metadata.push(`Ad: ${adName}`);
   if (adsetName) metadata.push(`Ad Set: ${adsetName}`);
@@ -187,8 +224,8 @@ function buildNotesFromMetadata(row, columnMap) {
   if (isOrganic !== null) metadata.push(`Organic: ${isOrganic ? 'Yes' : 'No'}`);
   
   const notes = metadata.length > 0 
-    ? `📊 Lead Source Details:\n${metadata.join('\n')}\n\nImported from Google Sheet on ${new Date().toLocaleString()}`
-    : `Imported from Google Sheet on ${new Date().toLocaleString()}`;
+    ? `📊 Lead Source Details:\n${metadata.join('\n')}\n\nImported from Google Sheet (${sheetName || 'Unknown'}) on ${new Date().toLocaleString()}`
+    : `Imported from Google Sheet (${sheetName || 'Unknown'}) on ${new Date().toLocaleString()}`;
   
   return notes;
 }
@@ -326,8 +363,8 @@ function autoLogin() {
   // Automatically get fresh JWT token
   // Use this if you want auto-refresh instead of manual token updates
   
-  const email = 'admin@dmhca.in'; // Change this
-  const password = 'Admin@123'; // Change this
+  const email = 'admin@dmhca.in';
+  const password = 'Admin@123';
   
   try {
     const url = `${API_URL}/api/auth/login`;

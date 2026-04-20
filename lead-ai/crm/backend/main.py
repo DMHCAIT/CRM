@@ -548,6 +548,46 @@ def ensure_schema_updates() -> None:
         if "company" not in lead_columns:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE leads ADD COLUMN company VARCHAR"))
+        # AI scoring columns
+        if "ml_score" not in lead_columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE leads ADD COLUMN ml_score FLOAT"))
+        if "rule_score" not in lead_columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE leads ADD COLUMN rule_score FLOAT"))
+        if "confidence" not in lead_columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE leads ADD COLUMN confidence FLOAT"))
+        if "scoring_method" not in lead_columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE leads ADD COLUMN scoring_method VARCHAR"))
+        if "buying_signal_strength" not in lead_columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE leads ADD COLUMN buying_signal_strength FLOAT DEFAULT 0"))
+        if "primary_objection" not in lead_columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE leads ADD COLUMN primary_objection VARCHAR"))
+        if "churn_risk" not in lead_columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE leads ADD COLUMN churn_risk FLOAT DEFAULT 0"))
+        if "next_action" not in lead_columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE leads ADD COLUMN next_action TEXT"))
+        if "priority_level" not in lead_columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE leads ADD COLUMN priority_level VARCHAR"))
+        if "recommended_script" not in lead_columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE leads ADD COLUMN recommended_script TEXT"))
+        if "last_contact_date" not in lead_columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE leads ADD COLUMN last_contact_date TIMESTAMP"))
+    
+    if "notes" in inspector.get_table_names():
+        note_columns = {col["name"] for col in inspector.get_columns("notes")}
+        if "channel" not in note_columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE notes ADD COLUMN channel VARCHAR DEFAULT 'manual'"))
 
     # Best-effort backfill for existing records with missing hospital mapping.
     # It maps by country to the first hospital in that country.

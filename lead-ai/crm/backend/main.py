@@ -284,7 +284,7 @@ if CORS_ALLOW_ALL:
     logger.warning("⚠️  CORS: Allowing ALL origins (credentials disabled)")
 else:
     # Specific origins only
-    DEFAULT_ORIGINS = "http://localhost:3000,http://localhost:3001,https://crm-h4fqiseqh-dmhca.vercel.app"
+    DEFAULT_ORIGINS = "http://localhost:3000,http://localhost:3001,https://crm-h4fqiseqh-dmhca.vercel.app,https://crm-zeta-sable.vercel.app"
     ALLOWED_ORIGINS_STR = os.getenv("ALLOWED_ORIGINS", DEFAULT_ORIGINS)
     ALLOWED_ORIGINS = [origin.strip() for origin in ALLOWED_ORIGINS_STR.split(",") if origin.strip()]
     ALLOW_CREDENTIALS = True
